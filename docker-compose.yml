@@ -1,0 +1,236 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Master
+  postgres-master:
+    image: postgres:16-alpine
+    container_name: tutor-ia-postgres-master
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      # - POSTGRES_REPLICATION_USER=${POSTGRES_REPLICATION_USER}  # COMENTADO TEMPORALMENTE
+      # - POSTGRES_REPLICATION_PASSWORD=${POSTGRES_REPLICATION_PASSWORD}  # COMENTADO TEMPORALMENTE
+    volumes:
+      - postgres_master_data:/var/lib/postgresql/data
+      - ./src/infrastructure/postgres/master/postgresql.conf:/etc/postgresql/postgresql.conf
+      - ./src/infrastructure/postgres/master/pg_hba.conf:/etc/postgresql/pg_hba.conf
+      - ./src/infrastructure/postgres/master/init.sql:/docker-entrypoint-initdb.d/init.sql
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf -c hba_file=/etc/postgresql/pg_hba.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tutor-ia-network
+
+  # PostgreSQL Replica - COMENTADO TEMPORALMENTE
+  # postgres-replica:
+  #   image: postgres:16-alpine
+  #   container_name: tutor-ia-postgres-replica
+  #   ports:
+  #     - "5433:5432"
+  #   depends_on:
+  #     postgres-master:
+  #       condition: service_healthy
+  #   environment:
+  #     - PGUSER=${POSTGRES_REPLICATION_USER}
+  #     - POSTGRES_PASSWORD=${POSTGRES_REPLICATION_PASSWORD}
+  #   volumes:
+  #     - postgres_replica_data:/var/lib/postgresql/data
+  #   command: |
+  #     bash -c "
+  #     if [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
+  #       echo 'Esperando a que el master esté listo...'
+  #       sleep 10
+  #       echo 'Iniciando backup desde master...'
+  #       PGPASSWORD='${POSTGRES_REPLICATION_PASSWORD}' pg_basebackup -h postgres-master -D /var/lib/postgresql/data -U ${POSTGRES_REPLICATION_USER} -v -P -R
+  #       chmod 700 /var/lib/postgresql/data
+  #       echo 'Backup completado, iniciando replica...'
+  #     fi
+  #     exec postgres
+  #     "
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -p 5432"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   networks:
+  #     - tutor-ia-network
+
+  # pgAdmin para gestión visual
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: tutor-ia-pgadmin
+    ports:
+      - "5050:80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD}
+      - PGADMIN_CONFIG_SERVER_MODE=False
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres-master
+    networks:
+      - tutor-ia-network
+
+  # Redis para caché y sesiones
+  redis:
+    image: redis:7-alpine
+    container_name: tutor-ia-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:REDACTED}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tutor-ia-network
+
+  # RabbitMQ para procesamiento asíncrono
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: tutor-ia-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tutor-ia-network
+
+  # MinIO - Almacenamiento compatible con S3
+  minio:
+    image: minio/minio:latest
+    container_name: tutor-ia-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_PASSWORD}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tutor-ia-network
+
+  # Qdrant - Base de datos vectorial
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: tutor-ia-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT_LOG_LEVEL=INFO
+    networks:
+      - tutor-ia-network
+
+  # Prometheus - Recolector de métricas
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: tutor-ia-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - tutor-ia-network
+
+  # Grafana - Visualizador de métricas
+  grafana:
+    image: grafana/grafana:latest
+    container_name: tutor-ia-grafana
+    ports:
+      - "3030:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - tutor-ia-network
+
+  # Elasticsearch - Almacenamiento de logs
+  elasticsearch:
+    image: elasticsearch:8.11.0
+    container_name: tutor-ia-elasticsearch
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - tutor-ia-network
+
+  # Kibana - Visualizador de logs
+  kibana:
+    image: kibana:8.11.0
+    container_name: tutor-ia-kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - tutor-ia-network
+
+networks:
+  tutor-ia-network:
+    driver: bridge
+
+volumes:
+  postgres_master_data:
+  # postgres_replica_data:  # COMENTADO TEMPORALMENTE
+  pgadmin_data:
+  redis_data:
+  rabbitmq_data:
+  minio_data:
+  qdrant_data:
+  prometheus_data:
+  grafana_data:
+  elasticsearch_data:
+  kibana_data:
