@@ -79,21 +79,124 @@ services:
       - tutor-ia-network
 
   # Redis para caché y sesiones
-  redis:
-    image: redis:7-alpine
-    container_name: tutor-ia-redis
+#  Redis Primary - Cache y Sesiones con Alta Disponibilidad
+  redis-primary:
+    image: redis:7.2-alpine
+    container_name: tutor-ia-redis-primary
+    restart: unless-stopped
     ports:
       - "6379:6379"
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:REDACTED}
+    command: >
+      redis-server /usr/local/etc/redis/redis.conf
+      --requirepass ${REDIS_PASSWORD:REDACTED}
+      --masterauth ${REDIS_PASSWORD:REDACTED}
     volumes:
-      - redis_data:/data
+      - redis_primary_data:/data
+      - ./src/infrastructure/redis/primary/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    environment:
+      - REDIS_REPLICATION_MODE=master
+      - REDIS_PASSWORD=${REDIS_PASSWORD:REDACTED}
     healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:REDACTED}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
     networks:
       - tutor-ia-network
+    sysctls:
+      - net.core.somaxconn=1024
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+
+  # Redis Replica - Backup para Alta Disponibilidad
+  redis-replica:
+    image: redis:7.2-alpine
+    container_name: tutor-ia-redis-replica
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    command: >
+      redis-server
+      --replicaof redis-primary 6379
+      --masterauth ${REDIS_PASSWORD:REDACTED}
+      --requirepass ${REDIS_PASSWORD:REDACTED}
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    depends_on:
+      redis-primary:
+        condition: service_healthy
+    volumes:
+      - redis_replica_data:/data
+    environment:
+      - REDIS_REPLICATION_MODE=replica
+      - REDIS_MASTER_HOST=redis-primary
+      - REDIS_MASTER_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:REDACTED}
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:REDACTED}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks:
+      - tutor-ia-network
+
+  # Redis Sentinel - Failover Automático
+  redis-sentinel:
+    image: redis:7.2-alpine
+    container_name: tutor-ia-redis-sentinel
+    restart: unless-stopped
+    ports:
+      - "26379:26379"
+    command: >
+      sh -c "sleep 5 && 
+      echo 'port 26379' > /etc/redis-sentinel.conf &&
+      echo 'sentinel monitor tutormaster redis-primary 6379 1' >> /etc/redis-sentinel.conf &&
+      echo 'sentinel auth-pass tutormaster ${REDIS_PASSWORD:REDACTED}' >> /etc/redis-sentinel.conf &&
+      echo 'sentinel down-after-milliseconds tutormaster 5000' >> /etc/redis-sentinel.conf &&
+      echo 'sentinel failover-timeout tutormaster 10000' >> /etc/redis-sentinel.conf &&
+      redis-sentinel /etc/redis-sentinel.conf"
+    depends_on:
+      redis-primary:
+        condition: service_healthy
+      redis-replica:
+        condition: service_healthy
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:REDACTED}
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks:
+      - tutor-ia-network
+
+
+  # Redis Commander - GUI para administración (solo desarrollo)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: tutor-ia-redis-commander
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_HOST=redis-primary
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:REDACTED}
+      - HTTP_USER=admin
+      - HTTP_PASSWORD=${REDIS_PASSWORD:REDACTED}
+    depends_on:
+      - redis-primary
+    networks:
+      - tutor-ia-network
+    profiles:
+      - dev  # Solo se levanta con --profile dev
 
   # RabbitMQ para procesamiento asíncrono
   rabbitmq:
@@ -224,9 +327,10 @@ networks:
 
 volumes:
   postgres_master_data:
-  # postgres_replica_data:  # COMENTADO TEMPORALMENTE
   pgadmin_data:
-  redis_data:
+  redis_data:          # Este ya existe
+  redis_primary_data:  # AÑADIR ESTE
+  redis_replica_data:  # AÑADIR ESTE
   rabbitmq_data:
   minio_data:
   qdrant_data:
@@ -234,3 +338,4 @@ volumes:
   grafana_data:
   elasticsearch_data:
   kibana_data:
+
