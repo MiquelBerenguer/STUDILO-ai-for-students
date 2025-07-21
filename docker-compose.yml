@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL Master
   postgres-master:
@@ -198,25 +196,37 @@ services:
     profiles:
       - dev  # Solo se levanta con --profile dev
 
-  # RabbitMQ para procesamiento asíncrono
+ # RabbitMQ para procesamiento asíncrono
   rabbitmq:
-    image: rabbitmq:3-management-alpine
+    image: rabbitmq:3.12-management-alpine
     container_name: tutor-ia-rabbitmq
+    restart: unless-stopped
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "5672:5672"   # AMQP port
+      - "15672:15672" # Management UI
     environment:
       - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
       - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD}
+      - RABBITMQ_DEFAULT_VHOST=tutor_ia
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+      - ./infrastructure/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
       retries: 5
+      start_period: 40s
     networks:
       - tutor-ia-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+
 
   # MinIO - Almacenamiento compatible con S3
   minio:

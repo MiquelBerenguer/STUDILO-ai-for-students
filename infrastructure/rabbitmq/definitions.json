@@ -1,0 +1,71 @@
+{
+  "rabbit_version": "3.12",
+  "rabbitmq_version": "3.12",
+  "vhosts": [
+    {
+      "name": "tutor_ia"
+    }
+  ],
+  "permissions": [
+    {
+      "user": "admin",
+      "vhost": "tutor_ia",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "tutor.document.processing",
+      "vhost": "tutor_ia",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false
+    },
+    {
+      "name": "tutor.ai.analysis",
+      "vhost": "tutor_ia",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false
+    },
+    {
+      "name": "tutor.dlx",
+      "vhost": "tutor_ia",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false
+    }
+  ],
+  "queues": [
+    {
+      "name": "document.ocr.process",
+      "vhost": "tutor_ia",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 3600000,
+        "x-dead-letter-exchange": "tutor.dlx"
+      }
+    },
+    {
+      "name": "ai.embeddings.generate",
+      "vhost": "tutor_ia",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-max-priority": 10
+      }
+    }
+  ],
+  "bindings": [
+    {
+      "source": "tutor.document.processing",
+      "vhost": "tutor_ia",
+      "destination": "document.ocr.process",
+      "destination_type": "queue",
+      "routing_key": "document.ocr.*"
+    }
+  ]
+}

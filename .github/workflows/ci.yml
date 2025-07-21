@@ -1,0 +1,51 @@
+name: CI Pipeline
+
+# Cuándo se ejecuta este workflow
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+# Variables de entorno globales
+env:
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+
+jobs:
+  # Job 1: Verificación de código
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+      
+      - name: Mostrar información del entorno
+        run: |
+          echo "🎯 Rama: ${{ github.ref }}"
+          echo "🔧 Evento: ${{ github.event_name }}"
+          echo "👤 Actor: ${{ github.actor }}"
+  
+  # Job 2: Build de imágenes Docker
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: lint  # Espera a que lint termine
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+      
+      - name: Verificar docker-compose.yml existe
+        run: |
+          if [ -f "docker-compose.yml" ]; then
+            echo "✅ docker-compose.yml encontrado"
+          else
+            echo "❌ docker-compose.yml NO encontrado"
+            echo "📁 Contenido del directorio:"
+            ls -la
+            exit 1
+          fi
+      
+      - name: Validar sintaxis docker-compose
+        run: docker-compose config
