@@ -1,11 +1,11 @@
 name: CI Pipeline
 
-# Cuándo se ejecuta este workflow
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, master ]  
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, develop, master ]  
+
 
 # Variables de entorno globales
 env:
