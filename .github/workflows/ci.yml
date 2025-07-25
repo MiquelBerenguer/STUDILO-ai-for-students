@@ -54,7 +54,8 @@ jobs:
       - name: 🔧 Verificar Docker y Docker Compose
         run: |
           docker --version
-          docker-compose --version
+          docker compose version
+
       
       - name: 📝 Crear docker-compose.yml temporal si no existe
         run: |
@@ -71,7 +72,7 @@ jobs:
           fi
       
       - name: 🏗️ Validar sintaxis docker-compose
-        run: docker-compose config
+        run: docker compose config
       
       - name: 🚀 Test build (si existe Dockerfile)
         run: |
