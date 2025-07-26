@@ -1,0 +1,84 @@
+# Configuración global de Prometheus
+global:
+  scrape_interval: 15s       # Frecuencia de recolección de métricas
+  evaluation_interval: 15s   # Frecuencia de evaluación de reglas
+  external_labels:
+    monitor: 'tutor-ia-monitor'
+    environment: 'development'
+
+# Configuración de alertas (lo configuraremos más adelante)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Archivos de reglas (para alertas)
+rule_files:
+  - "alerts/*.yml"
+
+# Configuración de scraping - qué servicios monitorear
+scrape_configs:
+  # Monitorear el propio Prometheus
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+  # Monitorear los contenedores Docker
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+        labels:
+          service: 'cadvisor'
+
+  # Monitorear PostgreSQL
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+        labels:
+          service: 'postgresql'
+
+  # Monitorear Redis
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: 'redis'
+
+  # Monitorear Node (métricas del host)
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'node'
+
+  # Monitorear nuestros servicios de aplicación (cuando los tengamos)
+  - job_name: 'api-gateway'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['api-gateway:3000']
+        labels:
+          service: 'api-gateway'
+
+  - job_name: 'auth-service'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['auth-service:3001']
+        labels:
+          service: 'auth'
+
+  - job_name: 'processor-service'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['processor-service:3002']
+        labels:
+          service: 'processor'
+
+  - job_name: 'ai-service'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['ai-service:3003']
+        labels:
+          service: 'ai'

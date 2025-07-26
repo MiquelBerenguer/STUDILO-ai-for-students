@@ -25,40 +25,6 @@ services:
     networks:
       - tutor-ia-network
 
-  # PostgreSQL Replica - COMENTADO TEMPORALMENTE
-  # postgres-replica:
-  #   image: postgres:16-alpine
-  #   container_name: tutor-ia-postgres-replica
-  #   ports:
-  #     - "5433:5432"
-  #   depends_on:
-  #     postgres-master:
-  #       condition: service_healthy
-  #   environment:
-  #     - PGUSER=${POSTGRES_REPLICATION_USER}
-  #     - POSTGRES_PASSWORD=${POSTGRES_REPLICATION_PASSWORD}
-  #   volumes:
-  #     - postgres_replica_data:/var/lib/postgresql/data
-  #   command: |
-  #     bash -c "
-  #     if [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
-  #       echo 'Esperando a que el master esté listo...'
-  #       sleep 10
-  #       echo 'Iniciando backup desde master...'
-  #       PGPASSWORD='${POSTGRES_REPLICATION_PASSWORD}' pg_basebackup -h postgres-master -D /var/lib/postgresql/data -U ${POSTGRES_REPLICATION_USER} -v -P -R
-  #       chmod 700 /var/lib/postgresql/data
-  #       echo 'Backup completado, iniciando replica...'
-  #     fi
-  #     exec postgres
-  #     "
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -p 5432"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #   networks:
-  #     - tutor-ia-network
-
   # pgAdmin para gestión visual
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -76,8 +42,7 @@ services:
     networks:
       - tutor-ia-network
 
-  # Redis para caché y sesiones
-#  Redis Primary - Cache y Sesiones con Alta Disponibilidad
+  # Redis Primary - Cache y Sesiones con Alta Disponibilidad
   redis-primary:
     image: redis:7.2-alpine
     container_name: tutor-ia-redis-primary
@@ -175,7 +140,6 @@ services:
     networks:
       - tutor-ia-network
 
-
   # Redis Commander - GUI para administración (solo desarrollo)
   redis-commander:
     image: rediscommander/redis-commander:latest
@@ -196,7 +160,7 @@ services:
     profiles:
       - dev  # Solo se levanta con --profile dev
 
- # RabbitMQ para procesamiento asíncrono
+  # RabbitMQ para procesamiento asíncrono
   rabbitmq:
     image: rabbitmq:3.12-management-alpine
     container_name: tutor-ia-rabbitmq
@@ -208,6 +172,7 @@ services:
       - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
       - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD}
       - RABBITMQ_DEFAULT_VHOST=tutor_ia
+      - RABBITMQ_PLUGINS_ENABLE=rabbitmq_prometheus
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
       - ./infrastructure/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
@@ -224,9 +189,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-
-
 
   # MinIO - Almacenamiento compatible con S3
   minio:
@@ -264,32 +226,108 @@ services:
 
   # Prometheus - Recolector de métricas
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v2.45.0
     container_name: tutor-ia-prometheus
+    restart: unless-stopped
     ports:
       - "9090:9090"
-    volumes:
-      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
     networks:
       - tutor-ia-network
+    depends_on:
+      - postgres-master
+      - redis-primary
 
   # Grafana - Visualizador de métricas
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:10.0.0
     container_name: tutor-ia-grafana
+    restart: unless-stopped
     ports:
       - "3030:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:REDACTED}
       - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3030
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
     depends_on:
       - prometheus
+    networks:
+      - tutor-ia-network
+
+  # Node Exporter - Métricas del sistema
+  node-exporter:
+    image: prom/node-exporter:v1.6.0
+    container_name: tutor-ia-node-exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    command:
+      - '--path.rootfs=/host'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    networks:
+      - tutor-ia-network
+
+  # cAdvisor - Métricas de contenedores Docker
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.0
+    container_name: tutor-ia-cadvisor
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    networks:
+      - tutor-ia-network
+
+  # PostgreSQL Exporter - Métricas de PostgreSQL
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.13.0
+    container_name: tutor-ia-postgres-exporter
+    restart: unless-stopped
+    ports:
+      - "9187:9187"
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-master:5432/${POSTGRES_DB}?sslmode=disable"
+    depends_on:
+      - postgres-master
+    networks:
+      - tutor-ia-network
+
+  # Redis Exporter - Métricas de Redis
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.52.0
+    container_name: tutor-ia-redis-exporter
+    restart: unless-stopped
+    ports:
+      - "9121:9121"
+    environment:
+      REDIS_ADDR: "redis-primary:6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:REDACTED}
+    depends_on:
+      - redis-primary
     networks:
       - tutor-ia-network
 
@@ -338,9 +376,9 @@ networks:
 volumes:
   postgres_master_data:
   pgadmin_data:
-  redis_data:          # Este ya existe
-  redis_primary_data:  # AÑADIR ESTE
-  redis_replica_data:  # AÑADIR ESTE
+  redis_data:
+  redis_primary_data:
+  redis_replica_data:
   rabbitmq_data:
   minio_data:
   qdrant_data:
@@ -348,4 +386,3 @@ volumes:
   grafana_data:
   elasticsearch_data:
   kibana_data:
-
