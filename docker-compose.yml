@@ -331,34 +331,44 @@ services:
     networks:
       - tutor-ia-network
 
-  # Elasticsearch - Almacenamiento de logs
+# Elasticsearch
   elasticsearch:
-    image: elasticsearch:8.11.0
-    container_name: tutor-ia-elasticsearch
-    ports:
-      - "9200:9200"
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: tutor-elasticsearch
     environment:
       - discovery.type=single-node
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
       - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - cluster.name=tutor-cluster
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
     volumes:
       - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    networks:
+      - tutor-ia-network  # CAMBIADO: usar la misma red que los demás
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-    networks:
-      - tutor-ia-network
+      start_period: 40s
 
   # Kibana - Visualizador de logs
   kibana:
-    image: kibana:8.11.0
+    image: docker.elastic.co/kibana/kibana:8.11.0  # CAMBIADO: imagen correcta
     container_name: tutor-ia-kibana
     ports:
       - "5601:5601"
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_SKIPSTARTUPCONNECTION=true
     depends_on:
       - elasticsearch
     healthcheck:
@@ -366,6 +376,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 60s
     networks:
       - tutor-ia-network
 
@@ -384,5 +395,6 @@ volumes:
   qdrant_data:
   prometheus_data:
   grafana_data:
-  elasticsearch_data:
   kibana_data:
+  elasticsearch_data:
+    driver: local

@@ -1,0 +1,32 @@
+{
+  "index_patterns": ["tutor-ia-*"],
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "index.refresh_interval": "5s"
+  },
+  "mappings": {
+    "properties": {
+      "@timestamp": { "type": "date" },
+      "timestamp": { "type": "date" },
+      "service": { "type": "keyword" },
+      "level": { "type": "keyword" },
+      "type": { "type": "keyword" },
+      "environment": { "type": "keyword" },
+      "app_name": { "type": "keyword" },
+      "message": { "type": "text" },
+      "trace_id": { "type": "keyword" },
+      "user_id": { "type": "keyword" },
+      "request_id": { "type": "keyword" },
+      "duration_ms": { "type": "long" },
+      "status_code": { "type": "integer" },
+      "error": {
+        "properties": {
+          "message": { "type": "text" },
+          "stack_trace": { "type": "text" },
+          "type": { "type": "keyword" }
+        }
+      }
+    }
+  }
+}
