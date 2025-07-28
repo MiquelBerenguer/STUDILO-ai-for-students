@@ -331,7 +331,7 @@ services:
     networks:
       - tutor-ia-network
 
-# Elasticsearch
+  # Elasticsearch
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
     container_name: tutor-elasticsearch
@@ -352,7 +352,7 @@ services:
       - "9200:9200"
       - "9300:9300"
     networks:
-      - tutor-ia-network  # CAMBIADO: usar la misma red que los demás
+      - tutor-ia-network
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
       interval: 30s
@@ -362,7 +362,7 @@ services:
 
   # Kibana - Visualizador de logs
   kibana:
-    image: docker.elastic.co/kibana/kibana:8.11.0  # CAMBIADO: imagen correcta
+    image: docker.elastic.co/kibana/kibana:8.11.0
     container_name: tutor-ia-kibana
     ports:
       - "5601:5601"
@@ -379,6 +379,33 @@ services:
       start_period: 60s
     networks:
       - tutor-ia-network
+
+  # Servicio de Procesamiento de Documentos
+  processor:
+    build: ./src/services/processor
+    container_name: tutor-ia-processor
+    ports:
+      - "8002:8002"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-master:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:REDACTED}@redis-primary:6379/0
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/tutor_ia
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_USER}
+      - MINIO_SECRET_KEY=${MINIO_PASSWORD}
+    depends_on:
+      - postgres-master
+      - redis-primary
+      - rabbitmq
+      - minio
+    networks:
+      - tutor-ia-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 networks:
   tutor-ia-network:
