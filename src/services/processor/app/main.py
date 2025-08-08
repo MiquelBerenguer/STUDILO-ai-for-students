@@ -7,6 +7,7 @@ import time
 from contextlib import asynccontextmanager
 import uuid
 from typing import Dict
+from datetime import datetime
 
 from .config import get_settings
 from .core.database import check_database_connection, create_tables
@@ -179,9 +180,15 @@ async def process_document(
             task_data = {
                 "job_id": job_id,
                 "filename": file.filename,
-                "object_name": f"uploads/{job_id}/{file.filename}",
-                "file_type": file_extension,
-                "created_at": time.time()
+                "file_path": f"uploads/{job_id}/{file.filename}",
+                "user_id": "anonymous",  # TODO: Obtener del contexto de autenticación
+                "require_analysis": True,
+                "created_at": datetime.utcnow().isoformat(),
+                "metadata": {
+                    "size": file.size,
+                    "type": file_extension,
+                    "content_type": file.content_type
+                }
             }
             await rabbitmq_client.publish_task(task_data)
             logger.info("Task published to queue", job_id=job_id)

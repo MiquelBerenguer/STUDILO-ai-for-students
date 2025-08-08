@@ -1,0 +1,56 @@
+## RabbitMQ Configuration for Tutor IA
+## Sistema de Colas Optimizado para Procesamiento de Documentos
+
+# Network Configuration
+listeners.tcp.default = 5672
+management.tcp.port = 15672
+management.tcp.ip = 0.0.0.0
+
+# Memory and Disk Limits
+# 60% de RAM para RabbitMQ (mejor que 40% para cargas pesadas)
+vm_memory_high_watermark.relative = 0.6
+# Alerta cuando quede menos de 1GB
+disk_free_limit.absolute = 1GB
+
+# Performance Tuning
+channel_max = 2047
+# Heartbeat más largo para procesos pesados
+heartbeat = 120
+# Más acceptors para manejar más conexiones concurrentes
+num_tcp_acceptors = 10
+# Optimización de red
+tcp_listen_options.backlog = 512
+tcp_listen_options.nodelay = true
+
+# Logging mejorado
+log.console = true
+log.console.level = info
+log.file.level = warning
+log.file = /var/log/rabbitmq/rabbit.log
+log.file.rotation.date = $D0
+log.file.rotation.count = 5
+
+# Consumer timeout para procesos largos (30 minutos)
+consumer_timeout = 1800000
+
+# Queue Master Location
+queue_master_locator = min-masters
+
+# Message Store Tuning (para PDFs grandes)
+queue_index_embed_msgs_below = 4096
+
+# Management Plugin
+management.load_definitions = /etc/rabbitmq/definitions.json
+management.path_prefix = /
+
+# Prometheus Metrics (ya lo tienes habilitado en docker-compose)
+prometheus.return_per_object_metrics = true
+
+# High Availability Settings
+cluster_partition_handling = autoheal
+
+# Frame size para mensajes grandes (128KB)
+frame_max = 131072
+
+# Políticas de garbage collection
+vm_memory_calculation_strategy = allocated

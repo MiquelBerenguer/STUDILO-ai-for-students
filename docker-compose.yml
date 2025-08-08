@@ -160,14 +160,14 @@ services:
     profiles:
       - dev  # Solo se levanta con --profile dev
 
-  # RabbitMQ para procesamiento asíncrono
+# RabbitMQ para procesamiento asíncrono
   rabbitmq:
     image: rabbitmq:3.12-management-alpine
     container_name: tutor-ia-rabbitmq
     restart: unless-stopped
     ports:
-      - "5672:5672"   # AMQP port
-      - "15672:15672" # Management UI
+      - "5672:5672"
+      - "15672:15672"
     environment:
       - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
       - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD}
@@ -176,6 +176,7 @@ services:
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
       - ./infrastructure/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./infrastructure/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 30s

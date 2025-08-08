@@ -16,9 +16,9 @@ class RabbitMQClient:
         self.exchange: Optional[aio_pika.Exchange] = None
         
         # Configuración de colas
-        self.exchange_name = "document_processing"
-        self.queue_name = "document_queue"
-        self.routing_key = "process.document"
+        self.exchange_name = ""  # Usar el exchange por defecto (direct)
+        self.queue_name = "pdf.process"
+        self.routing_key = "pdf.process"
         
     async def connect(self):
         """Inicializar conexión a RabbitMQ"""
