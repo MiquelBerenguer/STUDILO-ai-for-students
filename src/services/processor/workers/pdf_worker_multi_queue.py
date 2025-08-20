@@ -176,7 +176,6 @@ class PDFWorkerMultiQueue:
         try:
             # Actualizar estado en la API simple
             import requests
-            api_url = "http://localhost:8003"
             
             # Actualizar estado a completed
             update_data = {
