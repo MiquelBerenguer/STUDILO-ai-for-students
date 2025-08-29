@@ -16,8 +16,8 @@ class RabbitMQClient:
         self.exchange: Optional[aio_pika.Exchange] = None
         
         # Configuración de colas
-        self.exchange_name = ""  # Usar el exchange por defecto (direct)
-        self.queue_name = "pdf.process"
+        self.exchange_name = "tutor.processing"  # Exchange personalizado
+        self.queue_name = "pdf_processing"  # Cambiar nombre de cola para consistencia
         self.routing_key = "pdf.process"
         
     async def connect(self):
@@ -34,12 +34,15 @@ class RabbitMQClient:
             self.channel = await self.connection.channel()
             await self.channel.set_qos(prefetch_count=10)
             
-            # Declarar exchange
-            self.exchange = await self.channel.declare_exchange(
-                self.exchange_name,
-                aio_pika.ExchangeType.DIRECT,
-                durable=True
-            )
+            # Declarar exchange personalizado
+            if self.exchange_name:
+                self.exchange = await self.channel.declare_exchange(
+                    self.exchange_name,
+                    aio_pika.ExchangeType.TOPIC,
+                    durable=True
+                )
+            else:
+                self.exchange = self.channel.default_exchange
             
             # Declarar cola
             queue = await self.channel.declare_queue(
@@ -52,8 +55,9 @@ class RabbitMQClient:
                 }
             )
             
-            # Bind de cola a exchange
-            await queue.bind(self.exchange, routing_key=self.routing_key)
+            # Bind de cola a exchange solo si no es el default
+            if self.exchange_name:
+                await queue.bind(self.exchange, routing_key=self.routing_key)
             
             logger.info("RabbitMQ connection successful")
             
