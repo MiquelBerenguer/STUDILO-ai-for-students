@@ -9,8 +9,6 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
-      # - POSTGRES_REPLICATION_USER=${POSTGRES_REPLICATION_USER}  # COMENTADO TEMPORALMENTE
-      # - POSTGRES_REPLICATION_PASSWORD=${POSTGRES_REPLICATION_PASSWORD}  # COMENTADO TEMPORALMENTE
     volumes:
       - postgres_master_data:/var/lib/postgresql/data
       - ./src/infrastructure/postgres/master/postgresql.conf:/etc/postgresql/postgresql.conf
@@ -158,9 +156,9 @@ services:
     networks:
       - tutor-ia-network
     profiles:
-      - dev  # Solo se levanta con --profile dev
+      - dev
 
-# RabbitMQ para procesamiento asíncrono
+  # RabbitMQ para procesamiento asíncrono
   rabbitmq:
     image: rabbitmq:3.12-management-alpine
     container_name: tutor-ia-rabbitmq
@@ -381,6 +379,66 @@ services:
     networks:
       - tutor-ia-network
 
+  # ==============================================
+  # SERVICIOS NUEVOS: API Gateway y Auth Service
+  # ==============================================
+
+  # Auth Service - Servicio de autenticación JWT (DEBE IR PRIMERO)
+  auth-service:
+    build: ./src/services/auth
+    container_name: tutor-ia-auth-service
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - NODE_ENV=development
+      - JWT_SECRET=${JWT_SECRET}
+      - POSTGRES_HOST=postgres-master
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    depends_on:
+      postgres-master:
+        condition: service_healthy
+    networks:
+      - tutor-ia-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # API Gateway - Punto de entrada principal
+  api-gateway:
+    build: ./src/api-gateway
+    container_name: tutor-ia-api-gateway
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=development
+      - AUTH_SERVICE_URL=http://auth-service:3001
+      - PROCESSOR_SERVICE_URL=http://processor:8002
+      - AI_SERVICE_URL=http://ai-service:8003
+    depends_on:
+      - auth-service
+    networks:
+      - tutor-ia-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ==============================================
+  # SERVICIOS EXISTENTES
+  # ==============================================
+
   # Servicio de Procesamiento de Documentos
   processor:
     build: ./src/services/processor
@@ -392,8 +450,8 @@ services:
       - REDIS_URL=redis://:${REDIS_PASSWORD:REDACTED}@redis-primary:6379/0
       - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/tutor_ia
       - MINIO_ENDPOINT=minio:9000
-      - MINIO_ACCESS_KEY=${MINIO_USER}
-      - MINIO_SECRET_KEY=${MINIO_PASSWORD}
+      - MINIO_USER=${MINIO_USER}
+      - MINIO_PASSWORD=${MINIO_PASSWORD}
     depends_on:
       - postgres-master
       - redis-primary
@@ -407,6 +465,29 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # Worker para procesamiento de PDFs
+  worker:
+    build: ./src/services/processor
+    container_name: tutor-ia-worker
+    command: python /app/workers/pdf_worker_multi_queue.py
+    environment:
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/tutor_ia
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-master:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:REDACTED}@redis-primary:6379/0
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_USER=${MINIO_USER}
+      - MINIO_PASSWORD=${MINIO_PASSWORD}
+    depends_on:
+      - rabbitmq
+      - postgres-master
+      - minio
+    networks:
+      - tutor-ia-network
+    restart: unless-stopped
+    volumes:
+      - ./data/uploads:/app/uploads
+      - ./data/processed:/app/processed
 
 networks:
   tutor-ia-network:

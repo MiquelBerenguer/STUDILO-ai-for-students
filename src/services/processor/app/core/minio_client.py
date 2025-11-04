@@ -1,135 +1,167 @@
+"""
+Cliente MinIO para gestión de almacenamiento de archivos
+"""
+
+import os
+import logging
+from typing import Optional, Dict, Any
+from datetime import datetime
+import io
 from minio import Minio
 from minio.error import S3Error
-import io
-from typing import Optional, BinaryIO
-import structlog
-from datetime import timedelta
-from ..config import get_settings
+from app.config import get_settings
 
-logger = structlog.get_logger()
-settings = get_settings()
+logger = logging.getLogger(__name__)
 
 class MinIOClient:
+    """Cliente para interactuar con MinIO/S3"""
+    
     def __init__(self):
-        self.client: Optional[Minio] = None
-        self.bucket_name = settings.minio_bucket
+        """Inicializa el cliente MinIO"""
+        settings = get_settings()
         
-    async def connect(self):
-        """Inicializar conexión a MinIO"""
+        # Usar settings con las credenciales correctas
+        self.endpoint = settings.minio_endpoint
+        self.access_key = settings.minio_access_key
+        self.secret_key = settings.minio_secret_key
+        
+        logger.info(f"🔗 Conectando a MinIO en {self.endpoint}")
+        
         try:
+            # Crear cliente
             self.client = Minio(
-                settings.minio_endpoint,
-                access_key=settings.minio_access_key,
-                secret_key=settings.minio_secret_key,
-                secure=settings.minio_secure
+                self.endpoint,
+                access_key=self.access_key,
+                secret_key=self.secret_key,
+                secure=False  # No usar HTTPS en desarrollo
             )
             
-            # Crear bucket si no existe
-            if not self.client.bucket_exists(self.bucket_name):
-                self.client.make_bucket(self.bucket_name)
-                logger.info(f"Created bucket: {self.bucket_name}")
+            # Verificar conexión y crear buckets si no existen
+            self._ensure_buckets()
             
-            logger.info("MinIO connection successful")
+            logger.info("✅ Cliente MinIO inicializado correctamente")
+            
         except Exception as e:
-            logger.error("MinIO connection failed", error=str(e))
-            raise
+            logger.error(f"❌ Error inicializando MinIO: {e}")
+            # No lanzar excepción para que el servicio pueda continuar
+            self.client = None
     
-    async def upload_file(self, file_name: str, file_data: BinaryIO, content_type: str = "application/octet-stream") -> str:
-        """Subir archivo a MinIO"""
+    def _ensure_buckets(self):
+        """Asegura que los buckets necesarios existan"""
+        required_buckets = ['uploads', 'processed', 'temp']
+        
+        for bucket in required_buckets:
+            try:
+                if not self.client.bucket_exists(bucket):
+                    self.client.make_bucket(bucket)
+                    logger.info(f"✨ Bucket '{bucket}' creado")
+                else:
+                    logger.debug(f"✅ Bucket '{bucket}' ya existe")
+            except S3Error as e:
+                logger.warning(f"⚠️ Error verificando bucket '{bucket}': {e}")
+                # Continuar sin fallar
+    
+    def upload_file(
+        self, 
+        file_data: bytes, 
+        object_name: str, 
+        bucket_name: str = 'uploads',
+        metadata: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Sube un archivo a MinIO
+        """
         try:
-            # Obtener tamaño del archivo
-            file_data.seek(0, 2)  # Ir al final
-            file_size = file_data.tell()
-            file_data.seek(0)  # Volver al inicio
+            # Convertir bytes a stream
+            file_stream = io.BytesIO(file_data)
+            file_size = len(file_data)
             
-            # Subir archivo
+            logger.info(f"📤 Subiendo archivo a {bucket_name}/{object_name}")
+            
+            # Subir archivo SIN metadata para evitar problemas de firma
             result = self.client.put_object(
-                self.bucket_name,
-                file_name,
-                file_data,
-                file_size,
-                content_type=content_type
+                bucket_name,
+                object_name,
+                file_stream,
+                file_size
             )
             
-            logger.info("File uploaded successfully", 
-                       file_name=file_name, 
-                       size=file_size,
-                       etag=result.etag)
+            logger.info(f"✅ Archivo subido exitosamente: {result.object_name}")
             
-            return result.etag
+            return {
+                'bucket': bucket_name,
+                'object_name': object_name,
+                'etag': result.etag,
+                'version_id': result.version_id,
+                'size': file_size
+            }
+            
         except S3Error as e:
-            logger.error("MinIO upload error", error=str(e))
+            logger.error(f"❌ Error S3 subiendo archivo: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"❌ Error inesperado subiendo archivo: {e}")
             raise
     
-    async def download_file(self, file_name: str) -> bytes:
-        """Descargar archivo de MinIO"""
+    def download_file(self, object_name: str, bucket_name: str = 'uploads') -> bytes:
+        """
+        Descarga un archivo de MinIO
+        """
         try:
-            response = self.client.get_object(self.bucket_name, file_name)
-            data = response.read()
+            logger.info(f"📥 Descargando {bucket_name}/{object_name}")
+            
+            # Obtener objeto
+            response = self.client.get_object(bucket_name, object_name)
+            
+            # Leer contenido
+            file_data = response.read()
+            
+            # Cerrar conexión
             response.close()
             response.release_conn()
             
-            logger.info("File downloaded successfully", file_name=file_name)
-            return data
-        except S3Error as e:
-            logger.error("MinIO download error", error=str(e))
-            raise
-    
-    async def delete_file(self, file_name: str) -> bool:
-        """Eliminar archivo de MinIO"""
-        try:
-            self.client.remove_object(self.bucket_name, file_name)
-            logger.info("File deleted successfully", file_name=file_name)
-            return True
-        except S3Error as e:
-            logger.error("MinIO delete error", error=str(e))
-            return False
-    
-    async def file_exists(self, file_name: str) -> bool:
-        """Verificar si existe un archivo"""
-        try:
-            self.client.stat_object(self.bucket_name, file_name)
-            return True
-        except S3Error:
-            return False
-    
-    async def generate_presigned_url(self, file_name: str, expires: int = 3600) -> str:
-        """Generar URL temporal para descarga"""
-        try:
-            url = self.client.presigned_get_object(
-                self.bucket_name,
-                file_name,
-                expires=timedelta(seconds=expires)
-            )
-            return url
-        except S3Error as e:
-            logger.error("MinIO presigned URL error", error=str(e))
-            raise
-    
-    async def list_files(self, prefix: str = "", limit: int = 1000) -> list:
-        """Listar archivos en el bucket"""
-        try:
-            objects = self.client.list_objects(
-                self.bucket_name,
-                prefix=prefix,
-                recursive=True
-            )
+            logger.info(f"✅ Archivo descargado: {len(file_data)} bytes")
             
-            files = []
-            for obj in objects:
-                files.append({
-                    "name": obj.object_name,
-                    "size": obj.size,
-                    "last_modified": obj.last_modified,
-                    "etag": obj.etag
-                })
-                if len(files) >= limit:
-                    break
-                    
-            return files
+            return file_data
+            
         except S3Error as e:
-            logger.error("MinIO list error", error=str(e))
-            return []
+            logger.error(f"❌ Error S3 descargando archivo: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"❌ Error inesperado descargando archivo: {e}")
+            raise
+    
+    def get_file_info(self, object_name: str, bucket_name: str = 'uploads') -> Optional[Dict[str, Any]]:
+        """
+        Obtiene información sobre un archivo
+        """
+        try:
+            stat = self.client.stat_object(bucket_name, object_name)
+            
+            return {
+                'object_name': stat.object_name,
+                'size': stat.size,
+                'etag': stat.etag,
+                'content_type': stat.content_type,
+                'last_modified': stat.last_modified.isoformat() if stat.last_modified else None
+            }
+            
+        except S3Error as e:
+            if e.code == 'NoSuchKey':
+                logger.warning(f"⚠️ Archivo no encontrado: {bucket_name}/{object_name}")
+                return None
+            logger.error(f"❌ Error S3 obteniendo info: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Error inesperado obteniendo info: {e}")
+            return None
 
-# Instancia global
-minio_client = MinIOClient()
+# Singleton para reutilizar la conexión
+_minio_client = None
+
+def get_minio_client() -> MinIOClient:
+    """Obtiene la instancia singleton del cliente MinIO"""
+    global _minio_client
+    if _minio_client is None:
+        _minio_client = MinIOClient()
+    return _minio_client
