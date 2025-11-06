@@ -1,5 +1,4 @@
 services:
-  # PostgreSQL Master
   postgres-master:
     image: postgres:16-alpine
     container_name: tutor-ia-postgres-master
@@ -9,11 +8,15 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_REPL_USER=${POSTGRES_REPL_USER}
+      - POSTGRES_REPL_PASSWORD=${POSTGRES_REPL_PASSWORD}
+      - POSTGRES_APP_USER=${POSTGRES_APP_USER}
+      - POSTGRES_APP_PASSWORD=${POSTGRES_APP_PASSWORD}
     volumes:
       - postgres_master_data:/var/lib/postgresql/data
       - ./src/infrastructure/postgres/master/postgresql.conf:/etc/postgresql/postgresql.conf
       - ./src/infrastructure/postgres/master/pg_hba.conf:/etc/postgresql/pg_hba.conf
-      - ./src/infrastructure/postgres/master/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./src/infrastructure/postgres/master/init-master.sh:/docker-entrypoint-initdb.d/init-master.sh
     command: postgres -c config_file=/etc/postgresql/postgresql.conf -c hba_file=/etc/postgresql/pg_hba.conf
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
@@ -39,6 +42,60 @@ services:
       - postgres-master
     networks:
       - tutor-ia-network
+
+  # PostgreSQL Replica - Hot Standby para Alta Disponibilidad
+  postgres-replica:
+    image: postgres:16-alpine
+    container_name: tutor-ia-postgres-replica
+    depends_on:
+      postgres-master:
+        condition: service_healthy
+    environment:
+      - PG_MASTER_HOST=postgres-master
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_REPL_USER=${POSTGRES_REPL_USER}
+      - POSTGRES_REPL_PASSWORD=${POSTGRES_REPL_PASSWORD}
+      - POSTGRES_APP_USER=${POSTGRES_APP_USER}
+      - POSTGRES_APP_PASSWORD=${POSTGRES_APP_PASSWORD}
+      - POSTGRES_DB=tutor_ia_db
+      - POSTGRES_INITDB_ARGS=--no-init
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+      - ./src/infrastructure/postgres/replica/postgresql.conf:/etc/postgresql/postgresql.conf
+      - ./src/infrastructure/postgres/replica/startup.sh:/docker-entrypoint-initdb.d/startup.sh
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf -c hba_file=/var/lib/postgresql/data/pg_hba.conf
+    healthcheck:
+      test: ["CMD-SHELL", "psql -U ${POSTGRES_APP_USER} -d ${POSTGRES_DB} -c 'SELECT pg_is_in_recovery()' -tA | grep 't'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tutor-ia-network
+
+  # HAProxy - Balanceador de Carga para PostgreSQL HA
+  haproxy:
+    image: haproxy:2.8-alpine
+    container_name: tutor-ia-haproxy
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./src/infrastructure/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+    networks:
+      - tutor-ia-network
+    depends_on:
+      postgres-master:
+        condition: service_healthy
+      postgres-replica:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pidof haproxy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # Redis Primary - Cache y Sesiones con Alta Disponibilidad
   redis-primary:
@@ -242,7 +299,7 @@ services:
     networks:
       - tutor-ia-network
     depends_on:
-      - postgres-master
+      - postgres-master # Este está bien, solo monitorea el master
       - redis-primary
 
   # Grafana - Visualizador de métricas
@@ -309,9 +366,13 @@ services:
     ports:
       - "9187:9187"
     environment:
-      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-master:5432/${POSTGRES_DB}?sslmode=disable"
+      # Apunta a haproxy (CORREGIDO)
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@haproxy:5432/${POSTGRES_DB}?sslmode=disable"
+    # --- INICIO DE CAMBIOS (PASO 1.4) ---
     depends_on:
-      - postgres-master
+      haproxy: # Depende de haproxy, no de postgres-master
+        condition: service_healthy
+    # --- FIN DE CAMBIOS ---
     networks:
       - tutor-ia-network
 
@@ -394,13 +455,14 @@ services:
       - PORT=3001
       - NODE_ENV=development
       - JWT_SECRET=${JWT_SECRET}
-      - POSTGRES_HOST=postgres-master
+      # Apunta a haproxy con credenciales de app (CORREGIDO)
+      - POSTGRES_HOST=haproxy
       - POSTGRES_PORT=5432
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_APP_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_APP_PASSWORD}
+      - POSTGRES_DB=tutor_ia_db 
     depends_on:
-      postgres-master:
+      haproxy: # Depende de haproxy (CORREGIDO)
         condition: service_healthy
     networks:
       - tutor-ia-network
@@ -446,17 +508,24 @@ services:
     ports:
       - "8002:8002"
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-master:5432/${POSTGRES_DB}
+      # Apunta a haproxy con credenciales de app (CORREGIDO)
+      - DATABASE_URL=postgresql://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@haproxy:5432/tutor_ia_db
       - REDIS_URL=redis://:${REDIS_PASSWORD:REDACTED}@redis-primary:6379/0
       - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/tutor_ia
       - MINIO_ENDPOINT=minio:9000
       - MINIO_USER=${MINIO_USER}
       - MINIO_PASSWORD=${MINIO_PASSWORD}
+    # --- INICIO DE CAMBIOS (PASO 1.4) ---
     depends_on:
-      - postgres-master
-      - redis-primary
-      - rabbitmq
-      - minio
+      haproxy: # Depende de haproxy, no de postgres-master
+        condition: service_healthy
+      redis-primary:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    # --- FIN DE CAMBIOS ---
     networks:
       - tutor-ia-network
     restart: unless-stopped
@@ -473,15 +542,21 @@ services:
     command: python /app/workers/pdf_worker_multi_queue.py
     environment:
       - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/tutor_ia
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-master:5432/${POSTGRES_DB}
+      # Apunta a haproxy con credenciales de app (CORREGIDO)
+      - DATABASE_URL=postgresql://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@haproxy:5432/tutor_ia_db	
       - REDIS_URL=redis://:${REDIS_PASSWORD:REDACTED}@redis-primary:6379/0
       - MINIO_ENDPOINT=minio:9000
       - MINIO_USER=${MINIO_USER}
       - MINIO_PASSWORD=${MINIO_PASSWORD}
+    # --- INICIO DE CAMBIOS (PASO 1.4) ---
     depends_on:
-      - rabbitmq
-      - postgres-master
-      - minio
+      rabbitmq:
+        condition: service_healthy
+      haproxy: # Depende de haproxy, no de postgres-master
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    # --- FIN DE CAMBIOS ---
     networks:
       - tutor-ia-network
     restart: unless-stopped
@@ -495,9 +570,13 @@ networks:
 
 volumes:
   postgres_master_data:
+  postgres_replica_data:
   pgadmin_data:
-  redis_data:
+  # --- INICIO DE CAMBIOS (LIMPIEZA R#2) ---
+  # redis_data: # Eliminado por no estar en uso
   redis_primary_data:
+  # redis_replica_data: # Eliminado por estar duplicado
+  # --- FIN DE CAMBIOS ---
   redis_replica_data:
   rabbitmq_data:
   minio_data:

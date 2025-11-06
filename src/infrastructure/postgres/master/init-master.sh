@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 set -e
 
 # Función para logging
@@ -8,28 +8,31 @@ log() {
 
 log "Iniciando configuración del PostgreSQL Master..."
 
-# Crear usuario de replicación si no existe - COMENTADO TEMPORALMENTE
-# psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
-#     -- Crear usuario de replicación
-#     CREATE USER replicator WITH REPLICATION ENCRYPTED PASSWORD '$POSTGRES_REPLICATION_PASSWORD';
-#     
-#     -- Crear slot de replicación
-#     SELECT * FROM pg_create_physical_replication_slot('replica_1_slot');
+# --- INICIO DE CAMBIOS ---
+# Usar el script de shell para pasar variables de entorno a psql
+# Esto nos permite parametrizar TODAS las credenciales.
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+
+    -- Crear usuario de replicación (leyendo de variables de entorno)
+    CREATE USER ${POSTGRES_REPL_USER} WITH REPLICATION ENCRYPTED PASSWORD '${POSTGRES_REPL_PASSWORD}';
+    
+    -- Crear slot de replicación
+    SELECT * FROM pg_create_physical_replication_slot('replica_1_slot');
     
     -- Crear base de datos para la aplicación (si no existe ya)
     SELECT 'CREATE DATABASE tutor_ia_db'
     WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'tutor_ia_db')\gexec
     
-    -- Crear usuario de aplicación con contraseña por defecto
-    CREATE USER REDACTED WITH ENCRYPTED PASSWORD 'app_secure_password_123';
-    GRANT ALL PRIVILEGES ON DATABASE tutor_ia_db TO REDACTED;
+    -- Crear usuario de aplicación (leyendo de variables de entorno)
+    CREATE USER ${POSTGRES_APP_USER} WITH ENCRYPTED PASSWORD '${POSTGRES_APP_PASSWORD}';
+    GRANT ALL PRIVILEGES ON DATABASE tutor_ia_db TO ${POSTGRES_APP_USER};
     
     -- Conectar a la base de datos de la aplicación
     \c tutor_ia_db
     
     -- Crear schema
     CREATE SCHEMA IF NOT EXISTS tutor_ia;
-    GRANT ALL ON SCHEMA tutor_ia TO REDACTED;
+    GRANT ALL ON SCHEMA tutor_ia TO ${POSTGRES_APP_USER};
     
     -- Crear tablas iniciales
     CREATE TABLE IF NOT EXISTS tutor_ia.health_check (
@@ -39,17 +42,19 @@ log "Iniciando configuración del PostgreSQL Master..."
         checked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     
-    -- Tabla para métricas de replicación - COMENTADO TEMPORALMENTE
-    -- CREATE TABLE IF NOT EXISTS tutor_ia.replication_metrics (
-    --     id SERIAL PRIMARY KEY,
-    --     lag_bytes BIGINT,
-    --     lag_seconds FLOAT,
-    --     measured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    -- );
+    -- Tabla para métricas de replicación (habilitada)
+    CREATE TABLE IF NOT EXISTS tutor_ia.replication_metrics (
+        id SERIAL PRIMARY KEY,
+        lag_bytes BIGINT,
+        lag_seconds FLOAT,
+        measured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
     
-    GRANT ALL ON ALL TABLES IN SCHEMA tutor_ia TO REDACTED;
-    GRANT ALL ON ALL SEQUENCES IN SCHEMA tutor_ia TO REDACTED;
+    GRANT ALL ON ALL TABLES IN SCHEMA tutor_ia TO ${POSTGRES_APP_USER};
+    GRANT ALL ON ALL SEQUENCES IN SCHEMA tutor_ia TO ${POSTGRES_APP_USER};
+
 EOSQL
+# --- FIN DE CAMBIOS ---
 
 # Crear directorio de archivos WAL si no existe
 mkdir -p /var/lib/postgresql/archive
