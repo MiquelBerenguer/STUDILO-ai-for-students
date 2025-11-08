@@ -1,15 +1,17 @@
 ﻿FROM node:18-alpine
 
+ENV NODE_ENV=production
+
 WORKDIR /app
 
-# Copiar archivos de dependencias
-COPY package*.json ./
+COPY --chown=node:node package*.json ./
 
-# Instalar dependencias (usando npm install en vez de npm ci)
-RUN npm install --omit=dev
+RUN npm install --omit=dev && npm cache clean --force
 
-# Copiar el código fuente
-COPY . .
+COPY --chown=node:node . .
+
+# 🔒 FIX CRÍTICO R#10
+USER node
 
 EXPOSE 3001
 

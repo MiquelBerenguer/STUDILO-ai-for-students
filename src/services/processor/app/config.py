@@ -20,14 +20,15 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8002
     
-    # Database settings - Usar nombres correctos de docker-compose
-    postgres_host: str = os.getenv("POSTGRES_HOST", "postgres-master")
+    # Database settings
+    # CAMBIO R#1: Por defecto apuntamos a haproxy para HA
+    postgres_host: str = os.getenv("POSTGRES_HOST", "haproxy") 
     postgres_port: int = int(os.getenv("POSTGRES_PORT", "5432"))
     postgres_db: str = os.getenv("POSTGRES_DB", "tutor_db")
     postgres_user: str = os.getenv("POSTGRES_USER", "REDACTED")
     postgres_password: str = os.getenv("POSTGRES_PASSWORD", "REDACTED")
     
-    # MinIO settings - Usar variables de entorno del docker-compose
+    # MinIO settings
     minio_host: str = os.getenv("MINIO_ENDPOINT", "minio").split(":")[0]
     minio_port: int = 9000
     minio_access_key: str = os.getenv("MINIO_USER", "REDACTED")
@@ -35,23 +36,31 @@ class Settings(BaseSettings):
     minio_bucket_name: str = "documents"
     minio_secure: bool = False
     
-    # Redis settings - Usar nombre correcto y password
+    # --- INICIO CAMBIOS R#8 (REDIS HA) ---
+    # Redis Sentinel settings
+    redis_sentinel_host: str = os.getenv("REDIS_SENTINEL_HOST", "redis-sentinel")
+    redis_sentinel_port: int = int(os.getenv("REDIS_SENTINEL_PORT", "26379"))
+    redis_master_set: str = os.getenv("REDIS_MASTER_SET", "tutormaster")
+    REDACTED: str = os.getenv("REDIS_PASSWORD", "REDACTED")
+    
+    # (Opcional) Mantenemos estos por compatibilidad si algún test lo usa, 
+    # pero el código principal usará Sentinel.
     redis_host: str = os.getenv("REDIS_HOST", "redis-primary")
     redis_port: int = int(os.getenv("REDIS_PORT", "6379"))
     redis_db: int = 0
-    REDACTED: Optional[str] = os.getenv("REDIS_PASSWORD", "REDACTED")
+    # --- FIN CAMBIOS R#8 ---
     
-    # RabbitMQ settings - Usar vhost correcto
+    # RabbitMQ settings
     rabbitmq_host: str = os.getenv("RABBITMQ_HOST", "rabbitmq")
     rabbitmq_port: int = int(os.getenv("RABBITMQ_PORT", "5672"))
     rabbitmq_user: str = os.getenv("RABBITMQ_USER", "admin")
     rabbitmq_password: str = os.getenv("RABBITMQ_PASSWORD", "REDACTED")
-    rabbitmq_vhost: str = "tutor_ia"  # Cambiado de "/" a "tutor_ia" como está en docker-compose
+    rabbitmq_vhost: str = "tutor_ia"
     
     # Processing settings
     max_file_size_mb: int = 50
-    max_file_size: int = 50 * 1024 * 1024  # Añadido para compatibilidad con main.py
-    supported_formats: list = ["pdf", "txt", "docx", "xlsx", "pptx"]  # Sin puntos para compatibilidad
+    max_file_size: int = 50 * 1024 * 1024
+    supported_formats: list = ["pdf", "txt", "docx", "xlsx", "pptx"]
     ocr_enabled: bool = True
     ocr_language: str = "spa+eng"
     
@@ -63,9 +72,9 @@ class Settings(BaseSettings):
     @property
     def database_url(self) -> str:
         """Build PostgreSQL connection URL"""
-        # Usar la URL del entorno si está disponible
         env_url = os.getenv("DATABASE_URL")
         if env_url:
+            # Aseguramos uso de asyncpg para rendimiento
             return env_url.replace("postgresql://", "postgresql+asyncpg://")
         return (
             f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
@@ -74,8 +83,11 @@ class Settings(BaseSettings):
     
     @property
     def redis_url(self) -> str:
-        """Build Redis connection URL"""
-        # Usar la URL del entorno si está disponible
+        """
+        Build Redis connection URL.
+        NOTA: Usar solo para desarrollo local sin Sentinel o tests.
+        En producción, usar RedisClient con soporte Sentinel.
+        """
         env_url = os.getenv("REDIS_URL")
         if env_url:
             return env_url
@@ -86,7 +98,6 @@ class Settings(BaseSettings):
     @property
     def rabbitmq_url(self) -> str:
         """Build RabbitMQ connection URL"""
-        # Usar la URL del entorno si está disponible
         env_url = os.getenv("RABBITMQ_URL")
         if env_url:
             return env_url
@@ -98,10 +109,8 @@ class Settings(BaseSettings):
     @property
     def minio_endpoint(self) -> str:
         """Build MinIO endpoint URL"""
-        # Usar el endpoint del entorno si está disponible
         env_endpoint = os.getenv("MINIO_ENDPOINT")
         if env_endpoint:
-            # Si viene como "minio:9000", usarlo directamente
             return env_endpoint
         return f"{self.minio_host}:{self.minio_port}"
     
@@ -109,21 +118,13 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = False
-        # Permitir que las variables de entorno sobrescriban los valores por defecto
         env_prefix = ""
 
-
-# Create a cached instance of settings
 @lru_cache()
 def get_settings() -> Settings:
     """Get cached settings instance"""
     return Settings()
 
-
-# Export both Settings and a Config alias for compatibility
 settings = get_settings()
 Config = Settings  # Alias for backward compatibility
-
-
-# Convenience exports
 __all__ = ["Settings", "Config", "settings", "get_settings"]

@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   postgres-master:
     image: postgres:16-alpine
@@ -17,9 +19,10 @@ services:
       - ./src/infrastructure/postgres/master/postgresql.conf:/etc/postgresql/postgresql.conf
       - ./src/infrastructure/postgres/master/pg_hba.conf:/etc/postgresql/pg_hba.conf
       - ./src/infrastructure/postgres/master/init-master.sh:/docker-entrypoint-initdb.d/init-master.sh
+      - ./src/shared/database/init.sql:/docker-entrypoint-initdb.d/init.sql
     command: postgres -c config_file=/etc/postgresql/postgresql.conf -c hba_file=/etc/postgresql/pg_hba.conf
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "test -f /var/lib/postgresql/data/init-complete && pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -47,6 +50,7 @@ services:
   postgres-replica:
     image: postgres:16-alpine
     container_name: tutor-ia-postgres-replica
+    user: postgres
     depends_on:
       postgres-master:
         condition: service_healthy
@@ -55,16 +59,40 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_REPL_USER=${POSTGRES_REPL_USER}
-      - POSTGRES_REPL_PASSWORD=${POSTGRES_REPL_PASSWORD}
+      - PGPASSWORD=${POSTGRES_REPL_PASSWORD}
       - POSTGRES_APP_USER=${POSTGRES_APP_USER}
       - POSTGRES_APP_PASSWORD=${POSTGRES_APP_PASSWORD}
       - POSTGRES_DB=tutor_ia_db
-      - POSTGRES_INITDB_ARGS=--no-init
+      - PGDATA=/var/lib/postgresql/data
     volumes:
       - postgres_replica_data:/var/lib/postgresql/data
-      - ./src/infrastructure/postgres/replica/postgresql.conf:/etc/postgresql/postgresql.conf
-      - ./src/infrastructure/postgres/replica/startup.sh:/docker-entrypoint-initdb.d/startup.sh
-    command: postgres -c config_file=/etc/postgresql/postgresql.conf -c hba_file=/var/lib/postgresql/data/pg_hba.conf
+      - ./src/infrastructure/postgres/replica/postgresql.conf:/etc/postgresql/replica.conf:ro
+    command: >
+      sh -c "
+        set -e
+        log() {
+            echo \"[$(date +'%Y-%m-%d %H:%M:%S')] (Replica-CMD) \$1\"
+        }
+        log \"Esperando a que postgres-master (en $${PG_MASTER_HOST}) esté disponible...\"
+        until pg_isready -h \"$${PG_MASTER_HOST}\" -p \"5432\" -U \"${POSTGRES_REPL_USER}\"; do
+            log \"Master no está listo... esperando 3 segundos.\"
+            sleep 3
+        done
+        log \"¡Master detectado!\"
+        if [ \"$(ls -A $${PGDATA})\" ]; then
+            log \"PGDATA no está vacío. Limpiando datos antiguos...\"
+            rm -rf $${PGDATA}/*
+            log \"Datos antiguos eliminados.\"
+        else
+            log \"PGDATA está vacío. No se necesita limpieza.\"
+        fi
+        log \"Iniciando pg_basebackup desde $${PG_MASTER_HOST}...\"
+        pg_basebackup -h \"$${PG_MASTER_HOST}\" -p 5432 -U \"${POSTGRES_REPL_USER}\" -D \"$${PGDATA}\" -Fp -Xs -P -R -S \"replica_1_slot\"
+        log \"Backup base completado.\"
+        chmod 0700 \"$${PGDATA}\"
+        log \"Iniciando servidor PostgreSQL en modo réplica...\"
+        exec postgres -c config_file=/etc/postgresql/replica.conf
+      "
     healthcheck:
       test: ["CMD-SHELL", "psql -U ${POSTGRES_APP_USER} -d ${POSTGRES_DB} -c 'SELECT pg_is_in_recovery()' -tA | grep 't'"]
       interval: 10s
@@ -164,7 +192,7 @@ services:
     networks:
       - tutor-ia-network
 
-  # Redis Sentinel - Failover Automático
+# Redis Sentinel - Failover Automático (VERSIÓN FINAL SEGURA)
   redis-sentinel:
     image: redis:7.2-alpine
     container_name: tutor-ia-redis-sentinel
@@ -172,26 +200,32 @@ services:
     ports:
       - "26379:26379"
     command: >
-      sh -c "sleep 5 && 
-      echo 'port 26379' > /etc/redis-sentinel.conf &&
-      echo 'sentinel monitor tutormaster redis-primary 6379 1' >> /etc/redis-sentinel.conf &&
-      echo 'sentinel auth-pass tutormaster ${REDIS_PASSWORD:REDACTED}' >> /etc/redis-sentinel.conf &&
-      echo 'sentinel down-after-milliseconds tutormaster 5000' >> /etc/redis-sentinel.conf &&
-      echo 'sentinel failover-timeout tutormaster 10000' >> /etc/redis-sentinel.conf &&
+      sh -c "echo '⏳ Esperando a redis-primary...';
+      until redis-cli -h redis-primary -p 6379 -a ${REDIS_PASSWORD:REDACTED} ping | grep -q PONG; do
+          echo '... redis-primary no responde. Reintentando en 1s...';
+          sleep 1;
+      done;
+      echo '✅ ¡redis-primary detectado!';
+      echo 'port 26379' > /etc/redis-sentinel.conf;
+      echo 'sentinel resolve-hostnames yes' >> /etc/redis-sentinel.conf;
+      echo 'sentinel announce-hostnames yes' >> /etc/redis-sentinel.conf;
+      echo 'requirepass ${REDIS_PASSWORD:REDACTED}' >> /etc/redis-sentinel.conf;
+      echo 'sentinel monitor tutormaster redis-primary 6379 1' >> /etc/redis-sentinel.conf;
+      echo 'sentinel auth-pass tutormaster ${REDIS_PASSWORD:REDACTED}' >> /etc/redis-sentinel.conf;
+      echo 'sentinel down-after-milliseconds tutormaster 5000' >> /etc/redis-sentinel.conf;
+      echo 'sentinel failover-timeout tutormaster 10000' >> /etc/redis-sentinel.conf;
       redis-sentinel /etc/redis-sentinel.conf"
     depends_on:
       redis-primary:
         condition: service_healthy
-      redis-replica:
-        condition: service_healthy
     environment:
       - REDIS_PASSWORD=${REDIS_PASSWORD:REDACTED}
     healthcheck:
-      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      test: ["CMD", "redis-cli", "-p", "26379", "-a", "${REDIS_PASSWORD:REDACTED}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 40s
+      start_period: 30s
     networks:
       - tutor-ia-network
 
@@ -299,7 +333,7 @@ services:
     networks:
       - tutor-ia-network
     depends_on:
-      - postgres-master # Este está bien, solo monitorea el master
+      - postgres-master
       - redis-primary
 
   # Grafana - Visualizador de métricas
@@ -366,13 +400,10 @@ services:
     ports:
       - "9187:9187"
     environment:
-      # Apunta a haproxy (CORREGIDO)
       DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@haproxy:5432/${POSTGRES_DB}?sslmode=disable"
-    # --- INICIO DE CAMBIOS (PASO 1.4) ---
     depends_on:
-      haproxy: # Depende de haproxy, no de postgres-master
+      haproxy:
         condition: service_healthy
-    # --- FIN DE CAMBIOS ---
     networks:
       - tutor-ia-network
 
@@ -444,7 +475,7 @@ services:
   # SERVICIOS NUEVOS: API Gateway y Auth Service
   # ==============================================
 
-  # Auth Service - Servicio de autenticación JWT (DEBE IR PRIMERO)
+  # Auth Service - Servicio de autenticación JWT
   auth-service:
     build: ./src/services/auth
     container_name: tutor-ia-auth-service
@@ -455,14 +486,13 @@ services:
       - PORT=3001
       - NODE_ENV=development
       - JWT_SECRET=${JWT_SECRET}
-      # Apunta a haproxy con credenciales de app (CORREGIDO)
       - POSTGRES_HOST=haproxy
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_APP_USER}
       - POSTGRES_PASSWORD=${POSTGRES_APP_PASSWORD}
-      - POSTGRES_DB=tutor_ia_db 
+      - POSTGRES_DB=${POSTGRES_DB} 
     depends_on:
-      haproxy: # Depende de haproxy (CORREGIDO)
+      haproxy:
         condition: service_healthy
     networks:
       - tutor-ia-network
@@ -486,8 +516,14 @@ services:
       - AUTH_SERVICE_URL=http://auth-service:3001
       - PROCESSOR_SERVICE_URL=http://processor:8002
       - AI_SERVICE_URL=http://ai-service:8003
+      # AÑADIR ESTAS VARIABLES PARA REDIS HA:
+      - REDIS_SENTINEL_HOST=redis-sentinel
+      - REDIS_SENTINEL_PORT=26379
+      - REDIS_MASTER_SET=tutormaster
+      - REDIS_PASSWORD=${REDIS_PASSWORD:REDACTED}
     depends_on:
       - auth-service
+      - redis-sentinel
     networks:
       - tutor-ia-network
     healthcheck:
@@ -498,7 +534,7 @@ services:
       start_period: 40s
 
   # ==============================================
-  # SERVICIOS EXISTENTES
+  # SERVICIOS CORE (MODIFICADOS PARA R#8)
   # ==============================================
 
   # Servicio de Procesamiento de Documentos
@@ -508,24 +544,29 @@ services:
     ports:
       - "8002:8002"
     environment:
-      # Apunta a haproxy con credenciales de app (CORREGIDO)
+      - PYTHONUNBUFFERED=1
       - DATABASE_URL=postgresql://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@haproxy:5432/tutor_ia_db
-      - REDIS_URL=redis://:${REDIS_PASSWORD:REDACTED}@redis-primary:6379/0
+      # --- INICIO FIX R#8 (REDIS HA) ---
+      - REDIS_SENTINEL_HOST=redis-sentinel
+      - REDIS_SENTINEL_PORT=26379
+      - REDIS_MASTER_SET=tutormaster
+      - REDIS_PASSWORD=${REDIS_PASSWORD:REDACTED}
+      # --- FIN FIX R#8 ---
       - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/tutor_ia
       - MINIO_ENDPOINT=minio:9000
       - MINIO_USER=${MINIO_USER}
       - MINIO_PASSWORD=${MINIO_PASSWORD}
-    # --- INICIO DE CAMBIOS (PASO 1.4) ---
     depends_on:
-      haproxy: # Depende de haproxy, no de postgres-master
+      haproxy:
         condition: service_healthy
-      redis-primary:
+      # --- NUEVA DEPENDENCIA ---
+      redis-sentinel:
         condition: service_healthy
+      # -------------------------
       rabbitmq:
         condition: service_healthy
       minio:
         condition: service_healthy
-    # --- FIN DE CAMBIOS ---
     networks:
       - tutor-ia-network
     restart: unless-stopped
@@ -541,22 +582,29 @@ services:
     container_name: tutor-ia-worker
     command: python /app/workers/pdf_worker_multi_queue.py
     environment:
+      - PYTHONUNBUFFERED=1
       - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/tutor_ia
-      # Apunta a haproxy con credenciales de app (CORREGIDO)
-      - DATABASE_URL=postgresql://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@haproxy:5432/tutor_ia_db	
-      - REDIS_URL=redis://:${REDIS_PASSWORD:REDACTED}@redis-primary:6379/0
+      - DATABASE_URL=postgresql://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@haproxy:5432/tutor_ia_db
+      # --- INICIO FIX R#8 (REDIS HA) ---
+      - REDIS_SENTINEL_HOST=redis-sentinel
+      - REDIS_SENTINEL_PORT=26379
+      - REDIS_MASTER_SET=tutormaster
+      - REDIS_PASSWORD=${REDIS_PASSWORD:REDACTED}
+      # --- FIN FIX R#8 ---
       - MINIO_ENDPOINT=minio:9000
       - MINIO_USER=${MINIO_USER}
       - MINIO_PASSWORD=${MINIO_PASSWORD}
-    # --- INICIO DE CAMBIOS (PASO 1.4) ---
     depends_on:
       rabbitmq:
         condition: service_healthy
-      haproxy: # Depende de haproxy, no de postgres-master
+      haproxy:
         condition: service_healthy
+      # --- NUEVA DEPENDENCIA ---
+      redis-sentinel:
+        condition: service_healthy
+      # -------------------------
       minio:
         condition: service_healthy
-    # --- FIN DE CAMBIOS ---
     networks:
       - tutor-ia-network
     restart: unless-stopped
@@ -572,11 +620,7 @@ volumes:
   postgres_master_data:
   postgres_replica_data:
   pgadmin_data:
-  # --- INICIO DE CAMBIOS (LIMPIEZA R#2) ---
-  # redis_data: # Eliminado por no estar en uso
   redis_primary_data:
-  # redis_replica_data: # Eliminado por estar duplicado
-  # --- FIN DE CAMBIOS ---
   redis_replica_data:
   rabbitmq_data:
   minio_data:

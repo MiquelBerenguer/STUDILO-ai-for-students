@@ -8,6 +8,7 @@ log() {
 
 log "Iniciando configuración del PostgreSQL Master..."
 
+log "DEBUG (Master): Recibida POSTGRES_REPL_PASSWORD. Primeros 4 caracteres: $(echo $POSTGRES_REPL_PASSWORD | cut -c 1-4)"
 # --- INICIO DE CAMBIOS ---
 # Usar el script de shell para pasar variables de entorno a psql
 # Esto nos permite parametrizar TODAS las credenciales.
@@ -61,3 +62,10 @@ mkdir -p /var/lib/postgresql/archive
 chown postgres:postgres /var/lib/postgresql/archive
 
 log "Configuración del Master completada"
+
+# --- INICIO DE LA SOLUCIÓN (RACE CONDITION) ---
+# Creamos un fichero 'semáforo' para avisar a docker-compose
+# de que la inicialización HA TERMINADO.
+log "Creando fichero de señal /var/lib/postgresql/data/init-complete"
+touch /var/lib/postgresql/data/init-complete
+# --- FIN DE LA SOLUCIÓN ---
