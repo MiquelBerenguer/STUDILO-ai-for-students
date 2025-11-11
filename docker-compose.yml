@@ -62,7 +62,7 @@ services:
       - PGPASSWORD=${POSTGRES_REPL_PASSWORD}
       - POSTGRES_APP_USER=${POSTGRES_APP_USER}
       - POSTGRES_APP_PASSWORD=${POSTGRES_APP_PASSWORD}
-      - POSTGRES_DB=tutor_ia_db
+      - POSTGRES_DB=${POSTGRES_DB}  # Antes era tutor_ia_db
       - PGDATA=/var/lib/postgresql/data
     volumes:
       - postgres_replica_data:/var/lib/postgresql/data
@@ -545,7 +545,7 @@ services:
       - "8002:8002"
     environment:
       - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgresql://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@haproxy:5432/tutor_ia_db
+      - DATABASE_URL=postgresql://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@haproxy:5432/${POSTGRES_DB}
       # --- INICIO FIX R#8 (REDIS HA) ---
       - REDIS_SENTINEL_HOST=redis-sentinel
       - REDIS_SENTINEL_PORT=26379
@@ -584,7 +584,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/tutor_ia
-      - DATABASE_URL=postgresql://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@haproxy:5432/tutor_ia_db
+      - DATABASE_URL=postgresql://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@haproxy:5432/${POSTGRES_DB}
       # --- INICIO FIX R#8 (REDIS HA) ---
       - REDIS_SENTINEL_HOST=redis-sentinel
       - REDIS_SENTINEL_PORT=26379
@@ -608,9 +608,6 @@ services:
     networks:
       - tutor-ia-network
     restart: unless-stopped
-    volumes:
-      - ./data/uploads:/app/uploads
-      - ./data/processed:/app/processed
 
 networks:
   tutor-ia-network:

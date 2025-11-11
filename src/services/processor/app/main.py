@@ -9,6 +9,7 @@ import uuid
 from typing import Dict, Optional
 from datetime import datetime
 import json
+import asyncio  # <-- INICIO FIX R#9: Importar asyncio
 
 from .config import get_settings
 from .core.database import check_database_connection, create_tables
@@ -170,10 +171,10 @@ async def process_document(
             raise HTTPException(400, f"Unsupported format. Supported: {supported_formats}")
         
         logger.info("Processing file", 
-                   filename=file.filename,
-                   size=file_size,
-                   type=file_extension,
-                   job_id=job_id)
+                    filename=file.filename,
+                    size=file_size,
+                    type=file_extension,
+                    job_id=job_id)
         
         # Preparar rutas en MinIO
         object_name = f"{job_id}/{file.filename}"
@@ -191,19 +192,21 @@ async def process_document(
                     'upload-time': datetime.utcnow().isoformat()
                 }
                 
-                # Subir archivo
-                upload_result = minio_client.upload_file(
+                # --- INICIO REFACTOR R#9: Subida a MinIO Asíncrona ---
+                upload_result = await asyncio.to_thread(
+                    minio_client.upload_file,
                     file_data=file_content,
                     object_name=object_name,
                     bucket_name='uploads',
                     metadata=metadata
                 )
+                # --- FIN REFACTOR R#9 ---
                 
                 minio_path = f"uploads/{object_name}"
                 logger.info("File uploaded to MinIO", 
-                          bucket=upload_result['bucket'],
-                          object_name=upload_result['object_name'],
-                          size=upload_result['size'])
+                            bucket=upload_result['bucket'],
+                            object_name=upload_result['object_name'],
+                            size=upload_result['size'])
                 
                 minio_operations.labels(operation="upload", status="success").inc()
                 
@@ -255,9 +258,9 @@ async def process_document(
             
             await rabbitmq_client.publish_task(task_data)
             logger.info("Task published to queue", 
-                       job_id=job_id,
-                       priority=priority,
-                       queue="pdf.process")
+                        job_id=job_id,
+                        priority=priority,
+                        queue="pdf.process")
         
         # Registrar métricas
         processed_files.labels(status="queued", file_type=file_extension).inc()
@@ -296,7 +299,15 @@ async def get_job_status(job_id: str):
                 try:
                     # Verificar si el archivo existe en MinIO
                     object_name = f"{job_id}/{job_data.get('filename')}"
-                    file_info = minio_client.get_file_info(object_name, 'uploads')
+
+                    # --- INICIO REFACTOR R#9: Llamada Asíncrona ---
+                    file_info = await asyncio.to_thread(
+                        minio_client.get_file_info, 
+                        object_name, 
+                        'uploads'
+                    )
+                    # --- FIN REFACTOR R#9 ---
+                    
                     if file_info:
                         job_data["storage_info"] = {
                             "available": True,
@@ -342,7 +353,15 @@ async def cancel_job(job_id: str):
             if job_data.get("minio_path") and connections["minio"] and minio_client:
                 try:
                     object_name = f"{job_id}/{job_data.get('filename')}"
-                    minio_client.delete_file(object_name, 'uploads')
+                    
+                    # --- INICIO REFACTOR R#9: Llamada Asíncrona ---
+                    await asyncio.to_thread(
+                        minio_client.delete_file, 
+                        object_name, 
+                        'uploads'
+                    )
+                    # --- FIN REFACTOR R#9 ---
+                    
                     logger.info(f"Deleted file from MinIO: {object_name}")
                 except Exception as e:
                     logger.error(f"Error deleting file from MinIO: {e}")
@@ -366,7 +385,14 @@ async def list_stored_files(prefix: Optional[str] = None):
         raise HTTPException(503, "MinIO service not available")
     
     try:
-        files = minio_client.list_files('uploads', prefix=prefix or '')
+        # --- INICIO REFACTOR R#9: Llamada Asíncrona ---
+        files = await asyncio.to_thread(
+            minio_client.list_files, 
+            'uploads', 
+            prefix=prefix or ''
+        )
+        # --- FIN REFACTOR R#9 ---
+
         return {
             "total": len(files),
             "files": files,

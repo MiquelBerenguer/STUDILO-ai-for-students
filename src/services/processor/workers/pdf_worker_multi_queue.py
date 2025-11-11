@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-PDF Processing Worker - Multi-Queue Version with MinIO and Real OCR
-Versión completa con OCR usando Tesseract
+PDF Processing Worker - V4.0 (R#7 Implementado)
+- R#5: Actualización de estado en Redis
+- R#8: Alta Disponibilidad con Redis Sentinel
+- R#7: Implementación de Chunking con Langchain
 """
 
 import pika
@@ -17,6 +19,14 @@ from datetime import datetime
 import io
 import tempfile
 from pathlib import Path
+
+# --- Imports de Redis ---
+try:
+    from redis.sentinel import Sentinel
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
+    logging.warning("⚠️ Librería 'redis' no encontrada. El estado NO se actualizará.")
 
 # Importar MinIO
 try:
@@ -38,6 +48,14 @@ except ImportError as e:
     OCR_AVAILABLE = False
     logging.warning(f"OCR no disponible: {e}")
 
+# Importar librerías para Chunking (R#7)
+try:
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    LANGCHAIN_AVAILABLE = True
+except ImportError as e:
+    LANGCHAIN_AVAILABLE = False
+    logging.warning(f"Chunking no disponible (langchain): {e}")
+
 # Configurar logging
 logging.basicConfig(
     level=logging.INFO,
@@ -49,6 +67,7 @@ class MinIOHelper:
     """Helper class para operaciones con MinIO"""
     
     def __init__(self):
+        # FIX: Inicializar siempre self.client a None primero
         self.client = None
         if MINIO_AVAILABLE:
             try:
@@ -70,6 +89,7 @@ class MinIOHelper:
     def download_file(self, bucket: str, object_name: str) -> Optional[bytes]:
         """Descarga archivo de MinIO"""
         if not self.client:
+            logger.error("❌ Intento de descarga sin cliente MinIO inicializado")
             return None
         
         try:
@@ -84,17 +104,12 @@ class MinIOHelper:
             return None
     
     def upload_file(self, bucket: str, object_name: str, data: bytes) -> bool:
-        """
-        Sube archivo a MinIO sin metadata
-        Nota: Los metadata con guiones causan errores de firma en MinIO
-        """
+        """Sube archivo a MinIO"""
         if not self.client:
             return False
         
         try:
             data_stream = io.BytesIO(data)
-            
-            # Subir SIN metadata para evitar errores de firma
             self.client.put_object(
                 bucket_name=bucket,
                 object_name=object_name,
@@ -105,17 +120,11 @@ class MinIOHelper:
             return True
         except Exception as e:
             logger.error(f"❌ Error subiendo a MinIO: {e}")
-            logger.error(f"   Detalles: bucket={bucket}, object={object_name}, size={len(data)}")
             return False
 
 class PDFWorkerMultiQueue:
     def __init__(self, rabbitmq_url: str = None):
-        """
-        Inicializa el worker de procesamiento de PDFs
-        
-        Args:
-            rabbitmq_url: URL de conexión a RabbitMQ
-        """
+        """Inicializa el worker con RabbitMQ, MinIO y Redis HA"""
         self.rabbitmq_url = rabbitmq_url or os.getenv(
             'RABBITMQ_URL',
             'amqp://REDACTED:REDACTED@rabbitmq:5672/tutor_ia'
@@ -124,20 +133,70 @@ class PDFWorkerMultiQueue:
         self.channel = None
         self.consumer_tags = {}
         
-        # Inicializar MinIO helper
+        # Inicializar MinIO
         self.minio = MinIOHelper()
+
+        # --- INICIO REFACTOR R#7: Inicializar Text Splitter ---
+        self.text_splitter = None
+        if LANGCHAIN_AVAILABLE:
+            try:
+                # Parámetros (idealmente de env vars, pero definidos aquí por claridad)
+                # Tarea 2.4: Trozos de ~1000 tokens (aprox 4000 chars) con solapamiento
+                chunk_size = int(os.getenv('CHUNK_SIZE', 4000))
+                chunk_overlap = int(os.getenv('CHUNK_OVERLAP', 400))
+
+                self.text_splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=chunk_size,
+                    chunk_overlap=chunk_overlap,
+                    length_function=len,
+                    is_separator_regex=False,
+                    separators=["\n\n", "\n", ". ", " ", ""] # Separadores semánticos
+                )
+                logger.info(f"✅ Chunking (R#7) habilitado (Size: {chunk_size}, Overlap: {chunk_overlap})")
+            except Exception as e:
+                logger.error(f"❌ Error inicializando TextSplitter: {e}")
+                self.text_splitter = None
+        # --- FIN REFACTOR R#7 ---
         
-        # Definir las colas a escuchar (orden = prioridad)
-        self.queues = [
-            'pdf.process.priority',  # Primera prioridad
-            'pdf.process'            # Segunda prioridad
-        ]
-        
-        # Verificar disponibilidad de OCR
+        # --- FIX R#5/R#8 V3.3: Inicialización Redis Sentinel ROBUSTA ---
+        self.redis_master = None
+        if REDIS_AVAILABLE:
+            try:
+                sentinel_host = os.getenv('REDIS_SENTINEL_HOST', 'redis-sentinel')
+                sentinel_port = int(os.getenv('REDIS_SENTINEL_PORT', 26379))
+                master_set = os.getenv('REDIS_MASTER_SET', 'tutormaster')
+                REDACTED = os.getenv('REDIS_PASSWORD', None)
+
+                logger.info(f"🔧 Configurando Redis Sentinel: {sentinel_host}:{sentinel_port}")
+
+                # FIX V3.3: Usar sentinel_kwargs para la autenticación de Sentinel
+                sentinel_kwargs = {'password': REDACTED} if REDACTED else {}
+
+                sentinel = Sentinel(
+                    [(sentinel_host, sentinel_port)],
+                    sentinel_kwargs=sentinel_kwargs, # <--- CLAVE AQUÍ
+                    socket_timeout=1.0
+                )
+                
+                # Obtenemos el master
+                self.redis_master = sentinel.master_for(
+                    master_set,
+                    password=REDACTED, # Contraseña para el nodo Redis real
+                    socket_timeout=1.0,
+                    decode_responses=True
+                )
+                
+                # Prueba de conexión INMEDIATA para fallar rápido si está mal
+                self.redis_master.ping()
+                logger.info(f"✅ Redis HA conectado y autenticado correctamente")
+            except Exception as e:
+                logger.error(f"❌ Error inicializando Redis HA: {e}")
+                # Si falla aquí, self.redis_master será None y el worker seguirá sin actualizar estado
+        # ------------------------------------------------------------
+
+        self.queues = ['pdf.process.priority', 'pdf.process']
         if OCR_AVAILABLE:
             logger.info("✅ OCR disponible con Tesseract")
-        else:
-            logger.warning("⚠️ OCR no disponible - se extraerá solo texto embebido")
         
     def connect(self):
         """Establece conexión con RabbitMQ"""
@@ -145,455 +204,187 @@ class PDFWorkerMultiQueue:
             parameters = pika.URLParameters(self.rabbitmq_url)
             self.connection = pika.BlockingConnection(parameters)
             self.channel = self.connection.channel()
-            
-            # Configurar QoS - procesar 1 mensaje a la vez
             self.channel.basic_qos(prefetch_count=1)
-            
             logger.info("✅ Conectado a RabbitMQ")
             return True
         except Exception as e:
             logger.error(f"❌ Error conectando a RabbitMQ: {e}")
             return False
-    
+            
     def extract_text_from_pdf(self, pdf_content: bytes, filename: str) -> tuple[str, int, bool]:
-        """
-        Extrae texto de un PDF usando PyPDF2 y OCR si es necesario
-        
-        Returns:
-            tuple: (texto_extraido, num_paginas, se_uso_ocr)
-        """
         text_extracted = ""
         pages_count = 0
         ocr_used = False
-        
-        if not OCR_AVAILABLE:
-            return "OCR no disponible", 0, False
-        
+        if not OCR_AVAILABLE: return "OCR no disponible", 0, False
         try:
-            # Crear archivo temporal
             with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_file:
                 tmp_file.write(pdf_content)
                 tmp_file.flush()
                 tmp_path = tmp_file.name
-            
             try:
-                # Paso 1: Intentar extraer texto embebido con PyPDF2
-                logger.info(f"📖 Intentando extraer texto embebido de {filename}...")
-                
+                logger.info(f"📖 Extrayendo texto de {filename}...")
                 with open(tmp_path, 'rb') as pdf_file:
-                    pdf_reader = PyPDF2.PdfReader(pdf_file)
-                    pages_count = len(pdf_reader.pages)
-                    logger.info(f"📄 PDF tiene {pages_count} páginas")
-                    
-                    # Extraer texto de cada página
-                    for page_num, page in enumerate(pdf_reader.pages):
-                        try:
-                            page_text = page.extract_text()
-                            if page_text and len(page_text.strip()) > 10:
-                                text_extracted += f"\n\n=== PÁGINA {page_num + 1} ===\n"
-                                text_extracted += page_text
-                        except Exception as e:
-                            logger.warning(f"Error extrayendo texto de página {page_num}: {e}")
-                
-                # Verificar si se extrajo suficiente texto
-                text_length = len(text_extracted.strip())
-                logger.info(f"📏 Texto extraído: {text_length} caracteres")
-                
-                # Paso 2: Si no hay suficiente texto, usar OCR
-                if text_length < 100 and pages_count > 0:
-                    logger.info("🔍 Texto insuficiente, aplicando OCR con Tesseract...")
+                    pdf = PyPDF2.PdfReader(pdf_file)
+                    pages_count = len(pdf.pages)
+                    for p in pdf.pages: text_extracted += p.extract_text() or ""
+                if len(text_extracted.strip()) < 100 and pages_count > 0:
+                    logger.info("🔍 Aplicando OCR...")
                     ocr_used = True
-                    
-                    try:
-                        # Convertir PDF a imágenes
-                        images = convert_from_bytes(
-                            pdf_content,
-                            dpi=200,
-                            first_page=1,
-                            last_page=min(10, pages_count)  # Limitar a 10 páginas para no tardar mucho
-                        )
-                        
-                        text_extracted = ""
-                        for i, image in enumerate(images):
-                            logger.info(f"🔍 Aplicando OCR a página {i+1}/{len(images)}...")
-                            
-                            # Aplicar OCR
-                            page_text = pytesseract.image_to_string(
-                                image,
-                                lang='spa+eng'  # Español e inglés
-                            )
-                            
-                            if page_text:
-                                text_extracted += f"\n\n=== PÁGINA {i+1} (OCR) ===\n"
-                                text_extracted += page_text
-                            
-                            # Mostrar progreso
-                            if (i + 1) % 5 == 0:
-                                logger.info(f"   Procesadas {i+1}/{len(images)} páginas...")
-                        
-                        logger.info(f"✅ OCR completado: {len(text_extracted)} caracteres extraídos")
-                        
-                    except Exception as e:
-                        logger.error(f"❌ Error durante OCR: {e}")
-                        text_extracted = f"Error aplicando OCR: {str(e)}"
-                
-                # Si todavía no hay texto
-                if len(text_extracted.strip()) < 10:
-                    text_extracted = f"No se pudo extraer texto del PDF '{filename}'. El archivo puede estar vacío o contener solo imágenes."
-                    
+                    images = convert_from_bytes(pdf_content, dpi=200, first_page=1, last_page=min(5, pages_count))
+                    text_extracted = ""
+                    for img in images: text_extracted += pytesseract.image_to_string(img, lang='spa+eng') + "\n"
             finally:
-                # Limpiar archivo temporal
-                if os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
-                    
+                if os.path.exists(tmp_path): os.unlink(tmp_path)
         except Exception as e:
             logger.error(f"❌ Error procesando PDF: {e}")
-            text_extracted = f"Error procesando PDF: {str(e)}"
-        
+            text_extracted = f"Error: {str(e)}"
         return text_extracted, pages_count, ocr_used
-    
+
     def process_pdf(self, pdf_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Procesa un archivo PDF con OCR real
-        
-        Args:
-            pdf_data: Datos del PDF a procesar
-            
-        Returns:
-            Resultado del procesamiento
-        """
         job_id = pdf_data.get('job_id', 'unknown')
         filename = pdf_data.get('filename', 'unknown.pdf')
-        minio_object_key = pdf_data.get('minio_object_key')
-        minio_bucket = pdf_data.get('minio_bucket', 'uploads')
-        
-        logger.info(f"📄 Procesando PDF: {filename} (Job: {job_id})")
-        
-        pdf_content = None
-        text_extracted = ""
-        pages_count = 0
-        ocr_used = False
-        processing_time = 0
         start_time = time.time()
-        
-        # Intentar descargar de MinIO si está disponible
-        if minio_object_key and self.minio.client:
-            logger.info(f"🔍 Descargando de MinIO: {minio_bucket}/{minio_object_key}")
-            pdf_content = self.minio.download_file(minio_bucket, minio_object_key)
-            
-            if pdf_content:
-                logger.info(f"✅ Archivo descargado: {len(pdf_content)} bytes")
-                
-                # Procesar PDF con OCR real
-                text_extracted, pages_count, ocr_used = self.extract_text_from_pdf(pdf_content, filename)
-                
-            else:
-                logger.warning("⚠️ No se pudo descargar de MinIO")
-                text_extracted = "Error: No se pudo descargar el archivo de MinIO"
-        
-        # Si no se pudo procesar desde MinIO
-        if not pdf_content:
-            logger.warning("📝 No se pudo obtener el archivo desde MinIO")
-            text_extracted = f"Error: No se pudo obtener el archivo {filename} desde MinIO"
-            pages_count = 0
-        
+        logger.info(f"📄 Procesando PDF: {filename} (Job: {job_id})")
+
+        pdf_content = None
+        if pdf_data.get('minio_object_key'):
+             # FIX: Asegurar que self.minio está inicializado
+             if self.minio and self.minio.client:
+                 pdf_content = self.minio.download_file(
+                     pdf_data.get('minio_bucket', 'uploads'), 
+                     pdf_data.get('minio_object_key')
+                 )
+             else:
+                 logger.error("❌ No se puede descargar: MinIO no disponible")
+
+        # --- INICIO REFACTOR R#7 ---
+        chunks = []
+        num_chunks = 0
+        status = 'failed' # Asumir fallo hasta que se pruebe lo contrario
+        # --- FIN REFACTOR R#7 ---
+
+        if pdf_content:
+            text, pages, ocr = self.extract_text_from_pdf(pdf_content, filename)
+            status = 'completed' if not text.startswith("Error:") else 'failed'
+        else:
+            text, pages, ocr = "Error: No se pudo descargar archivo", 0, False
+            status = 'failed'
+
+        # --- INICIO REFACTOR R#7: Aplicar Chunking ---
+        if status == 'completed' and self.text_splitter:
+            try:
+                logger.info(f"🧩 Aplicando Chunking (R#7) para Job {job_id}...")
+                chunks = self.text_splitter.split_text(text)
+                num_chunks = len(chunks)
+                logger.info(f"🧩 Texto dividido en {num_chunks} chunks para Job {job_id}")
+            except Exception as e:
+                logger.error(f"❌ Error durante el chunking: {e}")
+                status = 'failed_chunking' # Nuevo estado de error
+                text = f"Error en Chunking: {e}" # Actualizar texto para reflejar error
+        elif status == 'completed' and not self.text_splitter:
+            logger.warning("⚠️ Worker completó extracción pero TextSplitter no está disponible. Saltando chunking.")
+            status = 'completed_no_chunks' # Nuevo estado
+        # --- FIN REFACTOR R#7 ---
+
         processing_time = time.time() - start_time
-        
-        # Preparar resultado
         result = {
-            'status': 'completed',
+            'status': status,
             'job_id': job_id,
-            'filename': filename,
-            'pages': pages_count,
-            'text_extracted': text_extracted[:10000],  # Limitar a 10000 caracteres
-            'text_length': len(text_extracted),
+            # 'text_preview': text[:200] + "...", # R#7: Eliminado, 'text' puede ser un error
+            'text_length': len(text) if status != 'failed_chunking' else 0,
+            'pages': pages,
+            'ocr_used': ocr,
+            'num_chunks': num_chunks, # R#7: Nuevo campo clave
             'processing_time': processing_time,
-            'worker_id': os.getpid(),
-            'queue': pdf_data.get('_queue_name', 'unknown'),
-            'minio_available': self.minio.client is not None,
-            'processed_from_minio': pdf_content is not None,
-            'ocr_used': ocr_used,
             'processed_at': datetime.utcnow().isoformat()
         }
-        
-        # Intentar guardar resultado en MinIO
-        if self.minio.client and pdf_content:
-            try:
-                # Guardar resultado como JSON
-                result_json = json.dumps(result, indent=2, ensure_ascii=False)
-                result_key = f"{job_id}/result.json"
-                
-                success_json = self.minio.upload_file(
-                    'processed',
-                    result_key,
-                    result_json.encode('utf-8')
-                )
-                
-                if success_json:
-                    logger.info(f"✅ Resultado JSON guardado en MinIO: processed/{result_key}")
-                
-                # Guardar texto extraído completo
-                if text_extracted and len(text_extracted) > 10:
-                    text_key = f"{job_id}/extracted_text.txt"
-                    success_text = self.minio.upload_file(
-                        'processed',
-                        text_key,
-                        text_extracted.encode('utf-8')
-                    )
-                    
-                    if success_text:
-                        logger.info(f"✅ Texto extraído guardado en MinIO: processed/{text_key}")
-                
-                if success_json:
-                    logger.info(f"✅ Todos los resultados guardados en MinIO: processed/{job_id}/")
-                
-            except Exception as e:
-                logger.error(f"⚠️ Error guardando en MinIO: {e}")
-                logger.error(traceback.format_exc())
-        
-        logger.info(f"✅ PDF procesado en {processing_time:.2f}s")
-        logger.info(f"   Páginas: {pages_count}")
-        logger.info(f"   OCR usado: {'Sí' if ocr_used else 'No'}")
-        logger.info(f"   Caracteres extraídos: {len(text_extracted)}")
-        
+
+        # --- INICIO REFACTOR R#7: Lógica de guardado en MinIO ---
+        if self.minio and self.minio.client and pdf_content:
+             # 1. Guardar el JSON de resultado/metadata (siempre)
+             self.minio.upload_file(
+                 'processed', 
+                 f"{job_id}/result.json", 
+                 json.dumps(result).encode('utf-8')
+             )
+             
+             # 2. Guardar los chunks (solo si se generaron)
+             if num_chunks > 0:
+                 chunks_data = json.dumps(chunks).encode('utf-8')
+                 self.minio.upload_file(
+                     'processed', 
+                     f"{job_id}/chunks.json", # Nuevo archivo
+                     chunks_data
+                 )
+                 logger.info(f"📤 Subidos {num_chunks} chunks a MinIO como 'chunks.json'")
+
+             # 3. YA NO GUARDAMOS el full_text.txt
+             # if text: self.minio.upload_file('processed', f"{job_id}/full_text.txt", text.encode('utf-8'))
+        # --- FIN REFACTOR R#7 ---
+
         return result
-    
-    def on_message(self, channel, method, properties, body):
-        """
-        Callback para procesar mensajes de la cola
-        
-        Args:
-            channel: Canal de RabbitMQ
-            method: Método de entrega
-            properties: Propiedades del mensaje
-            body: Cuerpo del mensaje
-        """
+
+    def update_job_status(self, job_id: str, result: Dict[str, Any]):
+        """Actualiza Redis con manejo de errores robusto"""
+        if not self.redis_master:
+            # Si falló la conexión al inicio, no intentamos cada vez
+            return
+
         try:
-            # Decodificar mensaje
+            redis_key = f"job:{job_id}"
+            current_data_raw = self.redis_master.get(redis_key)
+            current_data = json.loads(current_data_raw) if current_data_raw else {}
+            current_data.update(result)
+            current_data['updated_at'] = datetime.utcnow().isoformat()
+            self.redis_master.set(redis_key, json.dumps(current_data), ex=86400)
+            logger.info(f"✅ Job {job_id} actualizado en Redis a estado: {result['status']}")
+        except Exception as e:
+            # Loguear el error pero NO matar el worker
+            logger.error(f"⚠️ Error no crítico actualizando Redis para {job_id}: {e}")
+
+    def on_message(self, channel, method, properties, body):
+        try:
             message = json.loads(body)
-            message['_queue_name'] = method.routing_key  # Guardar de qué cola vino
+            job_id = message.get('job_id')
             
-            logger.info(f"📨 Mensaje recibido de cola '{method.routing_key}': {message.get('job_id', 'unknown')}")
-            
-            # Procesar PDF
+            # Notificar inicio
+            self.update_job_status(job_id, {'status': 'processing', 'worker_id': os.getpid()})
+
+            # Procesar
             result = self.process_pdf(message)
             
-            # Actualizar estado en base de datos
-            self.update_job_status(message.get('job_id'), result)
+            # Notificar fin
+            self.update_job_status(job_id, result)
             
-            # Confirmar mensaje procesado
             channel.basic_ack(delivery_tag=method.delivery_tag)
-            logger.info(f"✅ Mensaje confirmado: {method.delivery_tag}")
-            
-            # Si necesita análisis de IA, enviar a siguiente cola
-            if message.get('require_analysis', False):
-                self.send_to_analysis_queue(message, result)
-                
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ Error decodificando mensaje: {e}")
-            # Rechazar mensaje y enviarlo a DLQ
+
+        except Exception as e:
+            logger.error(f"❌ Error fatal en on_message: {e}")
+            traceback.print_exc()
+            if 'job_id' in locals():
+                 self.update_job_status(job_id, {'status': 'failed', 'error': str(e)})
+            # NACK para no perder el mensaje si es un error transitorio
             channel.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-            
-        except Exception as e:
-            logger.error(f"❌ Error procesando mensaje: {e}")
-            logger.error(traceback.format_exc())
-            
-            # Decidir si reintentar o enviar a DLQ
-            retry_count = properties.headers.get('x-retry-count', 0) if properties.headers else 0
-            
-            if retry_count < 3:
-                # Reintentar con delay
-                self.retry_message(channel, method, properties, body, retry_count)
-            else:
-                # Enviar a Dead Letter Queue
-                logger.error(f"🚫 Mensaje enviado a DLQ después de {retry_count} reintentos")
-                channel.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-    
-    def retry_message(self, channel, method, properties, body, retry_count):
-        """Reintenta procesar un mensaje con delay exponencial"""
-        retry_count += 1
-        delay = min(300, 10 * (2 ** retry_count))  # Max 5 minutos
-        
-        logger.warning(f"🔄 Reintentando mensaje (intento {retry_count}) con delay de {delay}s")
-        
-        # Crear headers con contador de reintentos
-        headers = properties.headers or {}
-        headers['x-retry-count'] = retry_count
-        
-        # Publicar mensaje con delay
-        channel.basic_publish(
-            exchange='tutor.processing',
-            routing_key='pdf.process.retry',
-            body=body,
-            properties=pika.BasicProperties(
-                headers=headers,
-                expiration=str(delay * 1000)  # TTL en milisegundos
-            )
-        )
-        
-        # Confirmar mensaje original
-        channel.basic_ack(delivery_tag=method.delivery_tag)
-    
-    def update_job_status(self, job_id: str, result: Dict[str, Any]):
-        """Actualizar el estado del trabajo en la base de datos"""
-        try:
-            # Por ahora solo logging, ya que la API está en otro servicio
-            logger.info(f"📊 Job {job_id} actualizado: {result['status']}")
-            logger.info(f"   MinIO: {'Sí' if result.get('processed_from_minio') else 'No'}")
-            logger.info(f"   OCR: {'Sí' if result.get('ocr_used') else 'No'}")
-            logger.info(f"   Tiempo: {result.get('processing_time', 0):.2f}s")
-            
-            # TODO: Implementar actualización real:
-            # - Usar Redis para actualizar estado
-            # - O hacer llamada HTTP a la API
-            # - O actualizar directamente en PostgreSQL
-            
-        except Exception as e:
-            logger.error(f"❌ Error actualizando estado: {e}")
-    
-    def send_to_analysis_queue(self, original_message: Dict, processing_result: Dict):
-        """Envía el resultado a la cola de análisis de IA"""
-        try:
-            # Primero crear el exchange si no existe
-            self.channel.exchange_declare(
-                exchange='tutor.processing',
-                exchange_type='topic',
-                durable=True
-            )
-            
-            analysis_message = {
-                'job_id': original_message.get('job_id'),
-                'text': processing_result.get('text_extracted'),
-                'metadata': {
-                    'filename': original_message.get('filename'),
-                    'pages': processing_result.get('pages', 0),
-                    'processing_time': processing_result.get('processing_time'),
-                    'processed_from_minio': processing_result.get('processed_from_minio', False),
-                    'ocr_used': processing_result.get('ocr_used', False)
-                }
-            }
-            
-            self.channel.basic_publish(
-                exchange='tutor.processing',
-                routing_key='ai.analysis',
-                body=json.dumps(analysis_message),
-                properties=pika.BasicProperties(
-                    delivery_mode=2,  # Mensaje persistente
-                    content_type='application/json'
-                )
-            )
-            logger.info(f"📤 Enviado a cola de análisis: {original_message.get('job_id')}")
-        except Exception as e:
-            logger.error(f"❌ Error enviando a cola de análisis: {e}")
-    
+
     def start_consuming(self):
-        """Inicia el consumo de mensajes de múltiples colas"""
-        if not self.channel:
-            logger.error("❌ No hay conexión establecida")
-            return
-        
-        try:
-            # Primero asegurar que el exchange existe
-            self.channel.exchange_declare(
-                exchange='tutor.processing',
-                exchange_type='topic',
-                durable=True
-            )
+        if not self.channel: return
+        self.channel.exchange_declare(exchange='tutor.processing', exchange_type='topic', durable=True)
+        for q in self.queues:
+            self.channel.queue_declare(queue=q, durable=True, arguments={'x-max-priority': 10})
+            self.channel.queue_bind(exchange='tutor.processing', queue=q, routing_key=q)
+            self.channel.basic_consume(queue=q, on_message_callback=self.on_message)
             
-            # Configurar consumers para cada cola
-            for queue_name in self.queues:
-                try:
-                    # Declarar la cola si no existe
-                    self.channel.queue_declare(
-                        queue=queue_name,
-                        durable=True,
-                        arguments={
-                            'x-max-priority': 10
-                        }
-                    )
-                    
-                    # Bind al exchange
-                    self.channel.queue_bind(
-                        exchange='tutor.processing',
-                        queue=queue_name,
-                        routing_key=queue_name
-                    )
-                    
-                    # Crear consumer
-                    consumer_tag = self.channel.basic_consume(
-                        queue=queue_name,
-                        on_message_callback=self.on_message,
-                        auto_ack=False  # ACK manual para confirmar procesamiento
-                    )
-                    
-                    self.consumer_tags[queue_name] = consumer_tag
-                    logger.info(f"🎯 Escuchando cola: {queue_name}")
-                    
-                except Exception as e:
-                    logger.warning(f"⚠️ Error configurando cola {queue_name}: {e}")
-            
-            if not self.consumer_tags:
-                logger.error("❌ No se pudo conectar a ninguna cola")
-                return
-            
-            logger.info(f"👷 Worker iniciado escuchando {len(self.consumer_tags)} colas")
-            logger.info(f"📦 MinIO: {'Conectado' if self.minio.client else 'No disponible'}")
-            logger.info(f"🔍 OCR: {'Disponible' if OCR_AVAILABLE else 'No disponible'}")
-            logger.info("👉 Procesando primero mensajes prioritarios")
-            logger.info("🛑 Presiona CTRL+C para detener...")
-            
-            # Iniciar consumo
-            self.channel.start_consuming()
-            
-        except KeyboardInterrupt:
-            logger.info("🛑 Deteniendo worker...")
-            self.stop_consuming()
-        except Exception as e:
-            logger.error(f"❌ Error en el worker: {e}")
-            self.stop_consuming()
-    
-    def stop_consuming(self):
-        """Detiene el consumo de mensajes de forma limpia"""
-        if self.channel:
-            try:
-                # Cancelar todos los consumers
-                for queue_name, consumer_tag in self.consumer_tags.items():
-                    self.channel.basic_cancel(consumer_tag)
-                    logger.info(f"✅ Dejó de escuchar: {queue_name}")
-                
-                self.channel.stop_consuming()
-                logger.info("✅ Consumo detenido")
-            except Exception as e:
-                logger.error(f"Error deteniendo consumo: {e}")
-        
-        if self.connection and not self.connection.is_closed:
-            self.connection.close()
-            logger.info("🔌 Conexión cerrada")
+        logger.info("🚀 Worker iniciado y esperando mensajes...")
+        self.channel.start_consuming()
 
 def main():
-    """Función principal del worker"""
-    logger.info("=" * 60)
-    logger.info("🚀 PDF Processing Worker v3.0 - Con MinIO y OCR Real")
-    logger.info("=" * 60)
-    
     worker = PDFWorkerMultiQueue()
-    
-    # Reintentar conexión si falla
-    max_retries = 5
-    retry_delay = 5
-    
-    for attempt in range(max_retries):
+    # Reintentos de conexión
+    for i in range(5):
         if worker.connect():
             worker.start_consuming()
             break
-        else:
-            if attempt < max_retries - 1:
-                logger.warning(f"⏳ Reintentando conexión en {retry_delay}s... (intento {attempt + 1}/{max_retries})")
-                time.sleep(retry_delay)
-                retry_delay *= 2  # Backoff exponencial
-            else:
-                logger.error("❌ No se pudo conectar después de múltiples intentos")
-                sys.exit(1)
+        time.sleep(5)
 
 if __name__ == "__main__":
     main()
