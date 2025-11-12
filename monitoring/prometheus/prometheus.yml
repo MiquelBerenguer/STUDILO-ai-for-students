@@ -72,7 +72,7 @@ scrape_configs:
   - job_name: 'processor-service'
     metrics_path: '/metrics'
     static_configs:
-      - targets: ['processor-service:3002']
+      - targets: ['processor-service:8002']
         labels:
           service: 'processor'
 
