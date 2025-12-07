@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pydantic
+requests
+# drivers de base de datos
+sqlalchemy
+psycopg2-binary
+# cliente de cola (necesario para lo que vamos a hacer luego)
+pika

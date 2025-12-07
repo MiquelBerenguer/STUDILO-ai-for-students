@@ -575,6 +575,36 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+# Servicio de Learning (Planificación y Exámenes) - EL CEREBRO
+  learning:
+    build: ./src/services/learning
+    container_name: tutor-ia-learning
+    ports:
+      - "8001:8001"  # Usaremos el puerto 8001 para diferenciarlo del processor (8002)
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@haproxy:5432/${POSTGRES_DB}
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/tutor_ia
+      # Configuración Redis HA
+      - REDIS_SENTINEL_HOST=redis-sentinel
+      - REDIS_SENTINEL_PORT=26379
+      - REDIS_MASTER_SET=tutormaster
+      - REDIS_PASSWORD=${REDIS_PASSWORD:REDACTED}
+    depends_on:
+      haproxy:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis-sentinel:
+        condition: service_healthy
+    networks:
+      - tutor-ia-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # Worker para procesamiento de PDFs
   worker:
