@@ -606,33 +606,45 @@ services:
       timeout: 10s
       retries: 3
 
-  # Worker para procesamiento de PDFs
+  # Worker para procesamiento de PDFs (INGENIERÍA / VISIÓN)
   worker:
-    build: ./src/services/processor
+    build:
+      context: .  # <--- IMPORTANTE: Contexto en la raíz del proyecto
+      dockerfile: src/services/processor/workers/Dockerfile
     container_name: tutor-ia-worker
-    command: python /app/workers/pdf_worker_multi_queue.py
+    
+    # CAMBIO 2: Borramos 'command'. Dejamos que el Dockerfile decida qué ejecutar.
+    
     environment:
       - PYTHONUNBUFFERED=1
+      # RabbitMQ
       - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/tutor_ia
+      
+      # Base de Datos (Opcional por ahora, pero lo dejamos)
       - DATABASE_URL=postgresql://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@haproxy:5432/${POSTGRES_DB}
-      # --- INICIO FIX R#8 (REDIS HA) ---
+      
+      # Redis HA
       - REDIS_SENTINEL_HOST=redis-sentinel
       - REDIS_SENTINEL_PORT=26379
       - REDIS_MASTER_SET=tutormaster
       - REDIS_PASSWORD=${REDIS_PASSWORD:REDACTED}
-      # --- FIN FIX R#8 ---
+      
+      # MinIO
       - MINIO_ENDPOINT=minio:9000
       - MINIO_USER=${MINIO_USER}
       - MINIO_PASSWORD=${MINIO_PASSWORD}
+
+      # CAMBIO 3: La clave para los "Ojos" de la IA
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+
     depends_on:
       rabbitmq:
         condition: service_healthy
       haproxy:
         condition: service_healthy
-      # --- NUEVA DEPENDENCIA ---
       redis-sentinel:
         condition: service_healthy
-      # -------------------------
       minio:
         condition: service_healthy
     networks:

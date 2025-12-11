@@ -1,188 +1,88 @@
 -- ==================================================================================
--- ARCHIVO MAESTRO DE INICIALIZACIÓN DE BASE DE DATOS (TutorIA)
--- Versión: 2.0 (Corregida con Tipos Cognitivos de Negocio)
+-- ARCHIVO MAESTRO DE INICIALIZACIÓN (TutorIA - B2C Engineering)
+-- Versión: 4.0 (Usuario Soberano + Inteligencia STEM)
 -- ==================================================================================
 
--- 1. EXTENSIONES BÁSICAS
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 2. DEFINICIÓN DE TIPOS (ENUMS) - El "ADN" del sistema
--- IMPORTANTE: Aquí definimos los 4 tipos de inteligencia según el negocio.
+-- 1. ENUMS (El "Cerebro" de la IA)
+-- Aunque sea B2C, necesitamos saber QUÉ es la asignatura para razonar bien.
 DROP TYPE IF EXISTS cognitive_type_enum CASCADE;
 CREATE TYPE cognitive_type_enum AS ENUM ('procedural', 'declarative', 'interpretative', 'conceptual');
 
-DROP TYPE IF EXISTS pattern_scope_enum CASCADE;
-CREATE TYPE pattern_scope_enum AS ENUM ('global', 'domain', 'course');
+DROP TYPE IF EXISTS domain_field_enum CASCADE;
+CREATE TYPE domain_field_enum AS ENUM ('mathematics', 'physics', 'computer_science', 'electronics', 'chemistry', 'general_engineering', 'other');
 
-DROP TYPE IF EXISTS exam_difficulty_enum CASCADE;
-CREATE TYPE exam_difficulty_enum AS ENUM ('easy', 'medium', 'hard');
+DROP TYPE IF EXISTS file_status_enum CASCADE;
+CREATE TYPE file_status_enum AS ENUM ('uploading', 'processing', 'ready', 'error');
 
--- 3. USUARIOS Y JERARQUÍA ACADÉMICA
+-- 2. USUARIOS (El Cliente)
 CREATE TABLE IF NOT EXISTS students (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    auth_user_id VARCHAR(255) UNIQUE NOT NULL, -- ID que vendrá del Auth Service (Firebase/Cognito/Propio)
-    first_name VARCHAR(100),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    auth_user_id VARCHAR(255) UNIQUE NOT NULL, -- Link con Auth Service
+    email VARCHAR(255) UNIQUE NOT NULL,
+    university_name VARCHAR(200), -- Dato informativo (no restrictivo)
+    degree_name VARCHAR(200),     -- Dato informativo
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- 3. ASIGNATURAS PERSONALES (User-Centric)
+-- Cada alumno crea SUS asignaturas. Si hay 1000 alumnos de Cálculo, habrá 1000 registros aquí.
 CREATE TABLE IF NOT EXISTS courses (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
     
-    name VARCHAR(200) NOT NULL,
+    name VARCHAR(200) NOT NULL, -- Ej: "Mis Mates II"
     
-    -- AQUÍ ESTÁ EL CAMBIO CLAVE: El curso define cómo "piensa" la IA.
-    -- Ej: "Cálculo" -> 'procedural', "Historia" -> 'declarative'
-    cognitive_type cognitive_type_enum NOT NULL DEFAULT 'declarative',
+    -- METADATOS CRÍTICOS (Para que la IA sepa comportarse)
+    -- El usuario puede seleccionarlos o la IA inferirlos
+    domain_field domain_field_enum DEFAULT 'general_engineering',
+    cognitive_type cognitive_type_enum DEFAULT 'procedural',
     
-    academic_level VARCHAR(50) NOT NULL, 
-    field_of_study VARCHAR(100),          
-    description TEXT,
+    semester INTEGER,
+    color_theme VARCHAR(50), -- Para el frontend
     
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 4. GESTIÓN DE TEMAS (Normalización para "Soberanía del Dato")
-CREATE TABLE IF NOT EXISTS topics (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
-    name VARCHAR(100) NOT NULL, -- Ej: "Derivadas", "Revolución Francesa"
-    
-    base_difficulty DECIMAL(3, 1) DEFAULT 5.0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    
-    UNIQUE(course_id, name) -- Evita duplicados dentro de un mismo curso
-);
--- Índice para búsquedas rápidas por curso
-CREATE INDEX idx_topics_course ON topics(course_id);
-
--- 5. MATERIALES Y APUNTES
-CREATE TABLE IF NOT EXISTS course_materials (
+-- 4. CONTENIDO / APUNTES (Ingesta)
+CREATE TABLE IF NOT EXISTS documents (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
     
     filename VARCHAR(255) NOT NULL,
     s3_key VARCHAR(512) NOT NULL,
-    file_type VARCHAR(10),
-    is_private BOOLEAN DEFAULT TRUE,
+    status file_status_enum DEFAULT 'uploading',
     
-    -- Metadata IA
-    ai_difficulty_score DECIMAL(3, 1) DEFAULT 5.0,
-    estimated_study_minutes INTEGER,
+    -- Resultados de la Ingesta (Worker Visión)
+    page_count INTEGER,
+    processed_latex_content TEXT, -- Aquí vive el resultado de la IA Visión
     
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Tabla Pivote: Un PDF puede hablar de muchos temas
-CREATE TABLE IF NOT EXISTS material_topics (
-    material_id UUID NOT NULL REFERENCES course_materials(id) ON DELETE CASCADE,
-    topic_id UUID NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
-    relevance_score DECIMAL(3,2) DEFAULT 1.0, 
-    PRIMARY KEY (material_id, topic_id)
-);
-
--- 6. INFRAESTRUCTURA DE INTELIGENCIA (Patrones Pedagógicos)
-CREATE TABLE IF NOT EXISTS pedagogical_patterns (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    
-    scope pattern_scope_enum NOT NULL, -- Global, Domain, o Course
-    target_id VARCHAR(255), -- ID del curso o nombre del dominio (ej. "engineering")
-    
-    cognitive_type cognitive_type_enum NOT NULL, -- Ahora usa los 4 tipos correctos
-    difficulty exam_difficulty_enum NOT NULL,
-    
-    reasoning_recipe TEXT NOT NULL, -- El "System Prompt" del profesor
-    original_question TEXT, -- Ejemplo Few-Shot
-    
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
--- Índice compuesto para búsquedas ultra-rápidas del StyleSelector
-CREATE INDEX idx_patterns_lookup ON pedagogical_patterns(scope, target_id, cognitive_type, difficulty);
-
--- 7. MEMORIA DE PROGRESO (Mastery)
-CREATE TABLE IF NOT EXISTS topic_mastery (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-    course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
-    topic_id UUID NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
-    
-    mastery_level INTEGER DEFAULT 0, -- 0 a 100
-    consecutive_failures INTEGER DEFAULT 0,
-    last_reviewed_at TIMESTAMP WITH TIME ZONE,
-    
-    UNIQUE(student_id, topic_id)
-);
-
--- 8. EXÁMENES Y PREGUNTAS
-CREATE TABLE IF NOT EXISTS exams (
+-- 5. EXÁMENES GENERADOS
+CREATE TABLE IF NOT EXISTS generated_exams (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
     
     title VARCHAR(200),
-    scope_type VARCHAR(20) DEFAULT 'SPECIFIC_TOPICS',
+    score DECIMAL(4, 2),
     
-    -- Lista de IDs de temas incluidos (Formato JSONB para flexibilidad)
-    topics_included JSONB, 
-    
-    status VARCHAR(20) DEFAULT 'DRAFT', 
-    score_average DECIMAL(4, 2),
-    
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-CREATE INDEX idx_exams_topics ON exams USING GIN (topics_included);
 
 CREATE TABLE IF NOT EXISTS exam_questions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    exam_id UUID NOT NULL REFERENCES exams(id) ON DELETE CASCADE,
+    exam_id UUID NOT NULL REFERENCES generated_exams(id) ON DELETE CASCADE,
     
-    question_text TEXT NOT NULL,
-    options JSONB, -- Array de opciones si es test
-    correct_answer TEXT,
+    question_latex TEXT NOT NULL,
+    solution_latex TEXT NOT NULL,
     explanation TEXT,
     
-    -- Rastro de Auditoría IA (Trazabilidad)
-    source_chunk_id VARCHAR(255),
-    used_pattern_id UUID REFERENCES pedagogical_patterns(id),
+    -- Referencia al documento original del usuario (RAG)
+    source_document_id UUID REFERENCES documents(id),
     
-    score DECIMAL(4, 2),
-    feedback TEXT,
     order_index INTEGER
-);
-
--- 9. PLANIFICADOR DE ESTUDIO (Estructura Limpia)
-CREATE TABLE IF NOT EXISTS study_plans (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-    
-    name VARCHAR(200) DEFAULT 'Plan Global Actual',
-    start_date DATE NOT NULL,
-    end_date DATE NOT NULL,
-    
-    configuration JSONB DEFAULT '{}', -- Preferencias del usuario
-    status VARCHAR(20) DEFAULT 'ACTIVE',
-    
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- Relación Many-to-Many entre Plan y Exámenes
-CREATE TABLE IF NOT EXISTS study_plan_items (
-    study_plan_id UUID NOT NULL REFERENCES study_plans(id) ON DELETE CASCADE,
-    exam_id UUID NOT NULL REFERENCES exams(id) ON DELETE CASCADE,
-    priority_override INTEGER DEFAULT 1,
-    PRIMARY KEY (study_plan_id, exam_id)
-);
-
--- Sesiones de calendario concretas
-CREATE TABLE IF NOT EXISTS study_sessions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    plan_id UUID NOT NULL REFERENCES study_plans(id) ON DELETE CASCADE,
-    
-    exam_id UUID NOT NULL REFERENCES exams(id) ON DELETE CASCADE,
-    topic_id UUID REFERENCES topics(id), -- Foco opcional de la sesión
-    
-    scheduled_date DATE NOT NULL,
-    duration_minutes INTEGER NOT NULL,
-    is_completed BOOLEAN DEFAULT FALSE,
-    
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
