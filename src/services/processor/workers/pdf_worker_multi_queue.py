@@ -37,7 +37,7 @@ class EngineeringWorkerAsync:
             secure=False
         )
         
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        self.model = genai.GenerativeModel('gemini-flash-latest')
         self.chunker = EngineeringChunker(chunk_size=1000, chunk_overlap=200)
         
         # Nuestro servicio Qdrant ya es nativo async
@@ -73,8 +73,6 @@ class EngineeringWorkerAsync:
         response = await loop.run_in_executor(None, lambda: self.model.generate_content([prompt, pil_image]))
         return response.text
 
-    # --- LÓGICA PRINCIPAL ---
-
     async def process_message(self, message: aio_pika.IncomingMessage):
         async with message.process():
             data = json.loads(message.body)
@@ -82,47 +80,66 @@ class EngineeringWorkerAsync:
             logger.info(f"⚡ [Job {job_id}] Iniciando Pipeline Asíncrono...")
 
             try:
-                # 1. Descargar PDF
-                bucket = data.get('minio_bucket', 'uploads')
-                key = data.get('minio_object_key')
-                pdf_data = await self._download_pdf_async(bucket, key)
-
-                # 2. Renderizar PDF a Imágenes
-                images = await self._render_images_async(pdf_data)
-                
-                full_markdown = ""
-
-                # 3. Procesar con Gemini (Async Loop)
-                for i, img in enumerate(images):
-                    logger.info(f"   [Job {job_id}] Vision Pag {i+1}/{len(images)}...")
-                    page_md = await self._call_gemini_async(img)
-                    full_markdown += f"\n\n\n{page_md}"
-
-                # 4. Guardar Backup MD en MinIO
-                md_bytes = full_markdown.encode('utf-8')
                 loop = asyncio.get_running_loop()
+                full_markdown = ""
                 md_key = f"{job_id}/processed.md"
-                await loop.run_in_executor(None, lambda: self.minio.put_object(
-                    'processed', md_key, io.BytesIO(md_bytes), len(md_bytes)
-                ))
-                logger.info(f"💾 Backup guardado en MinIO: {md_key}")
+                md_exists = False
 
-                # 5. Chunking (CPU Bound)
+                # --- 0. SMART RESUME: ¿Ya existe el trabajo hecho? ---
+                try:
+                    logger.info(f"🔎 [Job {job_id}] Buscando backup en MinIO...")
+                    # run_in_executor para no bloquear el loop mientras MinIO responde
+                    response = await loop.run_in_executor(None, lambda: self.minio.get_object('processed', md_key))
+                    full_markdown = response.read().decode('utf-8')
+                    response.close()
+                    response.release_conn()
+                    
+                    md_exists = True
+                    logger.info(f"♻️ [Job {job_id}] ¡Backup ENCONTRADO! Saltando OCR.")
+                except Exception:
+                    logger.info(f"🆕 [Job {job_id}] No hay backup. Iniciando OCR desde cero.")
+                    md_exists = False
+
+                # --- Si NO existe backup, hacemos el trabajo pesado (Pasos 1-4) ---
+                if not md_exists:
+                    # 1. Descargar PDF
+                    bucket = data.get('minio_bucket', 'uploads')
+                    key = data.get('minio_object_key')
+                    pdf_data = await self._download_pdf_async(bucket, key)
+
+                    # 2. Renderizar PDF a Imágenes
+                    images = await self._render_images_async(pdf_data)
+
+                    # 3. Procesar con Gemini (OCR)
+                    for i, img in enumerate(images):
+                        logger.info(f"   [Job {job_id}] Vision Pag {i+1}/{len(images)}...")
+                        page_md = await self._call_gemini_async(img)
+                        full_markdown += f"\n\n\n{page_md}"
+
+                    # 4. Guardar Backup MD en MinIO
+                    md_bytes = full_markdown.encode('utf-8')
+                    await loop.run_in_executor(None, lambda: self.minio.put_object(
+                        'processed', md_key, io.BytesIO(md_bytes), len(md_bytes)
+                    ))
+                    logger.info(f"💾 Backup guardado en MinIO: {md_key}")
+
+                # --- 5. Chunking (Se ejecuta SIEMPRE) ---
+                # Si recuperamos backup, full_markdown ya tiene el texto. Si no, lo acaba de generar Gemini.
                 text_chunks = await loop.run_in_executor(None, lambda: self.chunker.split_text(full_markdown))
                 
                 vector_chunks = []
                 for idx, text in enumerate(text_chunks):
                     vector_chunks.append(VectorChunk(
-                        id=f"{job_id}_{idx}", # ID único simple
+                        id=f"{job_id}_{idx}", 
                         text=text,
                         metadata={
-                            "source": key, 
+                            "source": data.get('minio_object_key', 'unknown'), 
                             "job_id": job_id,
                             "filename": data.get("filename", "unknown")
                         }
                     ))
 
-                # 6. Indexar en Qdrant (NATIVO ASYNC)
+                # --- 6. Indexar en Qdrant ---
                 if vector_chunks:
                     logger.info(f"🧠 Insertando {len(vector_chunks)} vectores en Qdrant...")
                     await self.qdrant.upsert_chunks(vector_chunks)
@@ -131,7 +148,6 @@ class EngineeringWorkerAsync:
 
             except Exception as e:
                 logger.error(f"🔥 Error fatal procesando Job {job_id}: {e}")
-                # Al salir con excepción, aio_pika hará NACK/Reject automáticamente
                 raise e
 
     async def run(self):

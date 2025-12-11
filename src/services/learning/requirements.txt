@@ -7,3 +7,6 @@ sqlalchemy
 psycopg2-binary
 # cliente de cola (necesario para lo que vamos a hacer luego)
 pika
+reportlab>=4.0.0
+jinja2>=3.1.0
+weasyprint>=60.0.0
