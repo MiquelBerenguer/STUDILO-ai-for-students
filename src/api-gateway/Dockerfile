@@ -1,23 +1,16 @@
-﻿FROM node:18-alpine
-
-# Buena práctica: definir entorno de producción explícitamente
-ENV NODE_ENV=production
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Cambiamos el propietario de los archivos AL COPIARLOS.
-# Esto evita tener que ejecutar 'chown -R' después, que duplica capas y aumenta el tamaño de la imagen.
-COPY --chown=node:node package*.json ./
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
 
-# Instalamos dependencias y limpiamos la caché en la misma capa
-RUN npm install --omit=dev && npm cache clean --force
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiamos el resto del código con los permisos correctos
-COPY --chown=node:node . .
+COPY . .
 
-# 🔒 FIX CRÍTICO R#10: Cambiar a usuario sin privilegios
-USER node
+EXPOSE 8000
 
-EXPOSE 3000
-
-CMD ["node", "serverapi.js"]
+# Usamos --reload para desarrollo. En producción lo quitaremos.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

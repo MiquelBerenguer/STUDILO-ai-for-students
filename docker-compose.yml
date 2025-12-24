@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres-master:
     image: postgres:16-alpine
@@ -192,7 +190,7 @@ services:
     networks:
       - tutor-ia-network
 
-# Redis Sentinel - Failover Automático (VERSIÓN FINAL SEGURA)
+  # Redis Sentinel - Failover Automático (VERSIÓN FINAL SEGURA)
   redis-sentinel:
     image: redis:7.2-alpine
     container_name: tutor-ia-redis-sentinel
@@ -505,33 +503,36 @@ services:
 
   # API Gateway - Punto de entrada principal
   api-gateway:
-    build: ./src/api-gateway
+    build: 
+      context: ./src/api-gateway
+      dockerfile: Dockerfile
     container_name: tutor-ia-api-gateway
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "8000:8000"  # Puerto estándar de FastAPI
     environment:
-      - PORT=3000
-      - NODE_ENV=development
-      - AUTH_SERVICE_URL=http://auth-service:3001
-      - PROCESSOR_SERVICE_URL=http://processor:8002
-      - AI_SERVICE_URL=http://ai-service:8003
-      # AÑADIR ESTAS VARIABLES PARA REDIS HA:
-      - REDIS_SENTINEL_HOST=redis-sentinel
+      # --- Configuración RabbitMQ ---
+      - RABBITMQ_HOST=tutor-ia-rabbitmq
+      - RABBITMQ_USER=${RABBITMQ_USER}       # Lee del .env (REDACTED)
+      - RABBITMQ_PASS=${RABBITMQ_PASSWORD}   # Lee del .env (tu contraseña real)
+      - RABBITMQ_VHOST=tutor_ia
+      # --- Configuración Redis (Lo dejaremos preparado para sesiones) ---
+      - REDIS_SENTINEL_HOST=tutor-ia-redis-sentinel
       - REDIS_SENTINEL_PORT=26379
       - REDIS_MASTER_SET=tutormaster
-      - REDIS_PASSWORD=${REDIS_PASSWORD:REDACTED}
     depends_on:
-      - auth-service
+      - rabbitmq
       - redis-sentinel
     networks:
-      - tutor-ia-network
+      - tutor-ia-network  # CRÍTICO: Coincide con tu configuración antigua
+    volumes:
+      - ./src/api-gateway:/app # Hot-reload activado
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 20s
 
   # ==============================================
   # SERVICIOS CORE (MODIFICADOS PARA R#8)
@@ -575,7 +576,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-# Servicio de Learning (Planificación y Exámenes) - EL CEREBRO
+
+  # Servicio de Learning (Planificación y Exámenes) - EL CEREBRO
   learning:
     build: ./src/services/learning
     container_name: tutor-ia-learning
@@ -650,6 +652,40 @@ services:
     networks:
       - tutor-ia-network
     restart: unless-stopped
+
+  # ==============================================
+  # NUEVO: WORKER DE APRENDIZAJE (Generador de Exámenes)
+  # ==============================================
+  learning-worker:
+    build: 
+      context: .
+      dockerfile: src/services/learning/Dockerfile
+    container_name: tutor-ia-learning-worker
+    # Comando para arrancar el consumidor de exámenes en lugar de la API
+    command: python src/services/learning/workers/exam_worker.py
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Conexiones Infra
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/tutor_ia
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_USER=${MINIO_USER}
+      - MINIO_PASSWORD=${MINIO_PASSWORD}
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      # Base de Datos (Para leer preferencias de usuario si hace falta)
+      - DATABASE_URL=postgresql://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@haproxy:5432/${POSTGRES_DB}
+      # Claves de IA (Vitales para este worker)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    depends_on:
+      - rabbitmq
+      - minio
+      - qdrant
+      # Esperamos a que la API de learning esté "buildada" al menos, aunque no es dep estricta de runtime
+      - learning 
+    networks:
+      - tutor-ia-network
+    restart: always
 
 networks:
   tutor-ia-network:

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block extra_styles %}
+    .question-container {
+        margin-bottom: 20px; /* Espacio entre preguntas */
+        page-break-inside: avoid; /* No partir enunciados a mitad de hoja */
+    }
+
+    .question-header {
+        font-weight: bold;
+        margin-bottom: 5px;
+        font-size: 12pt;
+    }
+
+    .question-body {
+        margin-left: 20px; /* Sangría ligera para el texto */
+        text-align: justify;
+    }
+
+    .points-badge {
+        font-weight: normal;
+        font-size: 10pt;
+        color: #444;
+        margin-left: 5px;
+    }
+    
+    /* Si la pregunta tiene imagen adjunta */
+    .question-image {
+        margin-top: 10px;
+        max-width: 80%;
+        border: 1px solid #eee;
+    }
+{% endblock %}
+
+{% block content %}
+    
+    {% for question in exam.questions %}
+    <div class="question-container">
+        <div class="question-header">
+            {{ loop.index }}. 
+            <span class="points-badge">(1 punt)</span> 
+        </div>
+
+        <div class="question-body">
+            {{ question.question_text | safe }}
+            
+            {% if question.options %}
+            <ul style="list-style-type: lower-alpha; margin-top: 5px;">
+                {% for opt in question.options %}
+                <li>{{ opt }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+
+{% endblock %}

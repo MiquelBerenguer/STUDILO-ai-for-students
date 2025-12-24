@@ -32,8 +32,8 @@ class EngineeringWorkerAsync:
         # Ajuste para usar las variables de entorno correctas de tu docker-compose
         self.minio = Minio(
             os.getenv('MINIO_ENDPOINT', 'minio:9000'),
-            access_key=os.getenv('MINIO_USER', 'REDACTED'), # <--- Coincide con docker-compose
-            secret_key=os.getenv('MINIO_PASSWORD', 'REDACTED'), # <--- Coincide con docker-compose
+            access_key=os.getenv('MINIO_USER', 'REDACTED'), 
+            secret_key=os.getenv('MINIO_PASSWORD', 'REDACTED'), 
             secure=False
         )
         
@@ -135,7 +135,10 @@ class EngineeringWorkerAsync:
                         metadata={
                             "source": data.get('minio_object_key', 'unknown'), 
                             "job_id": job_id,
-                            "filename": data.get("filename", "unknown")
+                            "filename": data.get("filename", "unknown"),        # <--- ¡AQUÍ ESTABA EL ERROR! (Añadida coma)
+                            "course_id": data.get("course_id", "general"),      # Vital para RAG
+                            "university_id": data.get("university_id", "global"), # Vital para multi-uni
+                            "doc_type": data.get("doc_type", "notes")
                         }
                     ))
 

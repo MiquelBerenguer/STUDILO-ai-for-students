@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plantilla Examen Interpretativo</title>
+    <style>
+        /* ESTÉTICA ACADÉMICA (Serif) */
+        @import url('https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,300;0,400;0,700;1,400&display=swap');
+
+        :root {
+            --font-main: 'Merriweather', 'Times New Roman', serif;
+            --color-text: #1a1a1a;
+            --color-line: #bbb;
+            --bg-paper: #fff;
+        }
+
+        body {
+            font-family: var(--font-main);
+            max-width: 210mm; /* A4 */
+            margin: 0 auto;
+            padding: 20mm;
+            background: var(--bg-paper);
+            color: var(--color-text);
+            box-sizing: border-box;
+            line-height: 1.5;
+        }
+
+        /* 1. HEADER COMPACTO (Típico de listas de preguntas) */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            border-bottom: 3px double black;
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+        }
+
+        .header-left h1 {
+            font-size: 16pt;
+            text-transform: uppercase;
+            margin: 0;
+        }
+
+        .header-left h2 {
+            font-size: 12pt;
+            font-weight: normal;
+            font-style: italic;
+            margin: 5px 0 0 0;
+        }
+
+        .header-right {
+            text-align: right;
+            font-size: 11pt;
+        }
+
+        /* 2. DATOS DEL ALUMNO (Versión Lineal) */
+        .student-strip {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 30px;
+            font-size: 11pt;
+            background-color: #f9f9f9;
+            padding: 10px;
+            border: 1px solid #ddd;
+        }
+
+        .input-group {
+            display: flex;
+            align-items: baseline;
+            flex-grow: 1;
+        }
+
+        .input-group label {
+            font-weight: bold;
+            margin-right: 10px;
+            text-transform: uppercase;
+            font-size: 0.8em;
+        }
+
+        .input-line {
+            flex-grow: 1;
+            border-bottom: 1px solid black;
+            height: 1.2em;
+        }
+
+        /* 3. LISTA DE PREGUNTAS (Estilo Interpretativo) */
+        .exam-content {
+            counter-reset: question-counter;
+        }
+
+        .question-item {
+            margin-bottom: 25px; /* Menos margen que en casos prácticos */
+            page-break-inside: avoid;
+        }
+
+        .question-header {
+            display: flex;
+            align-items: baseline;
+            margin-bottom: 8px;
+        }
+
+        .q-num {
+            font-weight: bold;
+            font-size: 12pt;
+            margin-right: 10px;
+            min-width: 25px;
+        }
+
+        .q-text {
+            font-weight: bold;
+            font-size: 11pt;
+        }
+
+        /* ZONA DE RESPUESTA: TIPO "DEFINITION" */
+        .answer-lines {
+            width: 100%;
+            /* Crea líneas horizontales para escribir */
+            background-image: repeating-linear-gradient(transparent, transparent 29px, var(--color-line) 29px, var(--color-line) 30px);
+            background-color: transparent;
+            line-height: 30px;
+            padding: 0 5px;
+            border: 1px solid transparent; /* Sin borde exterior, solo líneas */
+            font-family: 'Courier New', monospace; /* Monospace para diferenciar la respuesta */
+            font-size: 12pt;
+            resize: none;
+            outline: none;
+        }
+
+        /* Altura dinámica según la necesidad de la pregunta */
+        .short-answer { height: 92px; /* ~3 líneas (Definiciones) */ }
+        .medium-answer { height: 152px; /* ~5 líneas (Explicaciones) */ }
+
+        /* NOTA AL PIE / CRITERIOS */
+        .footer-note {
+            margin-top: 50px;
+            border-top: 1px solid #ccc;
+            padding-top: 10px;
+            font-size: 9pt;
+            color: #555;
+            font-style: italic;
+        }
+
+        @media print {
+            body { padding: 0; width: 100%; }
+            .answer-lines { border: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="header-left">
+            <h1>{{NOMBRE_UNIVERSIDAD}}</h1>
+            <h2>{{FACULTAD_DEPARTAMENTO}}</h2>
+        </div>
+        <div class="header-right">
+            <strong>Asignatura:</strong> {{NOMBRE_ASIGNATURA}}<br>
+            <strong>Fecha:</strong> {{FECHA_EXAMEN}}
+        </div>
+    </header>
+
+    <div class="student-strip">
+        <div class="input-group" style="flex-grow: 2;">
+            <label>Apellidos y Nombre:</label>
+            <div class="input-line"></div>
+        </div>
+        <div class="input-group">
+            <label>Grupo:</label>
+            <div class="input-line"></div>
+        </div>
+    </div>
+
+    <div class="exam-content">
+        
+        <div class="question-item">
+            <div class="question-header">
+                <span class="q-num">1.</span>
+                <span class="q-text">{{PREGUNTA_DEFINICION_CORTA}}</span>
+            </div>
+            <textarea class="answer-lines short-answer" placeholder=""></textarea>
+        </div>
+
+        <div class="question-item">
+            <div class="question-header">
+                <span class="q-num">2.</span>
+                <span class="q-text">{{PREGUNTA_COMPARACION}}</span>
+            </div>
+            <textarea class="answer-lines medium-answer"></textarea>
+        </div>
+
+        <div class="question-item">
+            <div class="question-header">
+                <span class="q-num">3.</span>
+                <span class="q-text">{{PREGUNTA_EXPLICACION}}</span>
+            </div>
+            <textarea class="answer-lines medium-answer"></textarea>
+        </div>
+
+        <div class="question-item">
+            <div class="question-header">
+                <span class="q-num">4.</span>
+                <span class="q-text">{{PREGUNTA_CONCEPTO_TECNICO}}</span>
+            </div>
+            <textarea class="answer-lines short-answer"></textarea>
+        </div>
+
+        <div class="question-item">
+            <div class="question-header">
+                <span class="q-num">5.</span>
+                <span class="q-text">{{PREGUNTA_GENERICA}}</span>
+            </div>
+            <textarea class="answer-lines medium-answer"></textarea>
+        </div>
+
+    </div>
+
+    <div class="footer-note">
+        <strong>Criterios de calificación:</strong> a) Adecuación pregunta-respuesta; b) Precisión en la respuesta; c) Expresión correcta; d) Presentación formal.
+    </div>
+
+</body>
+</html>

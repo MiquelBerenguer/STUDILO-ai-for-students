@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plantilla Examen Procedimental</title>
+    <style>
+        /* ESTÉTICA ACADÉMICA (Serif) */
+        @import url('https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,300;0,400;0,700;1,400&display=swap');
+
+        :root {
+            --font-main: 'Merriweather', 'Times New Roman', serif;
+            --color-text: #000;
+            --color-placeholder: #666;
+            --border-color: #000;
+            --bg-paper: #fff;
+        }
+
+        body {
+            font-family: var(--font-main);
+            max-width: 210mm; /* A4 */
+            margin: 0 auto;
+            padding: 20mm;
+            background: var(--bg-paper);
+            color: var(--color-text);
+            box-sizing: border-box;
+        }
+
+        /* 1. ENCABEZADO INSTITUCIONAL */
+        header {
+            text-align: center;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+        }
+
+        .university-name {
+            font-size: 18pt;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 0;
+            font-weight: bold;
+        }
+
+        .faculty-name {
+            font-size: 14pt;
+            font-style: italic;
+            margin: 5px 0;
+            font-weight: normal;
+        }
+
+        .exam-meta {
+            margin-top: 15px;
+            font-size: 12pt;
+        }
+
+        /* 2. DATOS DEL ALUMNO (GRID) */
+        .student-header {
+            display: grid;
+            grid-template-columns: 2fr 1fr; /* 2 partes para nombre, 1 para grupo */
+            gap: 20px;
+            margin-bottom: 40px;
+            border: 1px solid #ccc;
+            padding: 15px;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .input-label {
+            font-size: 10pt;
+            text-transform: uppercase;
+            font-weight: bold;
+            color: var(--color-placeholder);
+            margin-bottom: 5px;
+        }
+
+        .input-field {
+            border: none;
+            border-bottom: 1px dotted #000;
+            font-family: var(--font-main);
+            font-size: 12pt;
+            padding: 5px;
+            background: transparent;
+        }
+
+        /* 3. ESTRUCTURA DEL CASO PRÁCTICO */
+        .case-section {
+            margin-bottom: 40px;
+            page-break-inside: avoid;
+        }
+
+        .case-header {
+            background-color: #f0f0f0;
+            padding: 8px 15px;
+            font-weight: bold;
+            font-size: 13pt;
+            border-left: 5px solid #000;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+        }
+
+        /* 4. BLOQUE DE PREGUNTA Y RESPUESTA */
+        .question-item {
+            margin-bottom: 25px;
+        }
+
+        .question-statement {
+            font-weight: bold;
+            margin-bottom: 10px;
+            display: block;
+            font-size: 11pt;
+        }
+
+        .answer-area {
+            width: 100%;
+            min-height: 100px; /* Altura para escribir */
+            border: 1px solid #ddd;
+            background-color: #fafafa;
+            padding: 10px;
+            font-family: var(--font-main);
+            font-size: 11pt;
+            resize: vertical; /* Permite al alumno agrandar si es web */
+            box-sizing: border-box;
+        }
+
+        /* Placeholder visual para impresión (renglones) */
+        .answer-area::placeholder {
+            color: #ccc;
+            font-style: italic;
+        }
+
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1 class="university-name">{{NOMBRE_UNIVERSIDAD}}</h1>
+        <h2 class="faculty-name">{{NOMBRE_FACULTAD}}</h2>
+        <div class="exam-meta">
+            <strong>Asignatura:</strong> {{NOMBRE_ASIGNATURA}} | 
+            <strong>Convocatoria:</strong> {{FECHA_O_TIPO}}
+        </div>
+    </header>
+
+    <section class="student-header">
+        <div class="input-group">
+            <label class="input-label">Apellidos y Nombre</label>
+            <input type="text" class="input-field" placeholder="(Espacio para el estudiante)">
+        </div>
+        <div class="input-group">
+            <label class="input-label">Grupo / Clase</label>
+            <input type="text" class="input-field" placeholder="">
+        </div>
+    </section>
+
+    <section class="case-section">
+        <div class="case-header">
+            {{TITULO_CASO_1}}
+        </div>
+
+        <div class="question-item">
+            <div class="question-statement">1. {{TEXTO_PREGUNTA_1}}</div>
+            <textarea class="answer-area" placeholder="Escriba su respuesta aquí..."></textarea>
+        </div>
+
+        <div class="question-item">
+            <div class="question-statement">2. {{TEXTO_PREGUNTA_2}}</div>
+            <textarea class="answer-area" placeholder="Escriba su respuesta aquí..."></textarea>
+        </div>
+    </section>
+
+    <section class="case-section">
+        <div class="case-header">
+            {{TITULO_CASO_2}}
+        </div>
+
+        <div class="question-item">
+            <div class="question-statement">3. {{TEXTO_PREGUNTA_3}}</div>
+            <textarea class="answer-area"></textarea>
+        </div>
+    </section>
+
+</body>
+</html>

@@ -1,107 +1,180 @@
 import math
-from typing import List, Dict
-from dataclasses import dataclass, field
+import random
+from typing import List, Dict, Optional
+from pydantic import BaseModel, Field # <--- CAMBIO CRÍTICO: Usamos Pydantic
+
 from src.services.learning.domain.entities import (
-    ExamConfig, ExamDifficulty, CognitiveType
+    ExamConfig, ExamDifficulty, CognitiveType, PedagogicalPattern
 )
 
-@dataclass
-class BlueprintConfig:
-    target_score: float = 10.0
-    # Puntos base según la dificultad (Fácil vale menos, Difícil vale más)
-    base_points: Dict[str, float] = field(default_factory=lambda: {
-        "easy": 1.0, 
-        "medium": 1.5, 
-        "hard": 2.5
-    })
+# [Visualización] Matriz de Distribución Cognitiva (TU GRAN APORTE)
+COGNITIVE_MATRIX = {
+    # Ingeniería pura (Cálculo, Física, Programación)
+    "technical": {
+        ExamDifficulty.FUNDAMENTAL: [CognitiveType.CONCEPTUAL, CognitiveType.COMPUTATIONAL],
+        ExamDifficulty.APPLIED:     [CognitiveType.COMPUTATIONAL, CognitiveType.DEBUGGING],
+        ExamDifficulty.COMPLEX:     [CognitiveType.DESIGN_ANALYSIS, CognitiveType.DEBUGGING],
+        ExamDifficulty.GATEKEEPER:  [CognitiveType.DESIGN_ANALYSIS]
+    },
+    # Gestión o Humanidades (Ética, Historia de la Ingeniería)
+    "theoretical": {
+        ExamDifficulty.FUNDAMENTAL: [CognitiveType.CONCEPTUAL],
+        ExamDifficulty.APPLIED:     [CognitiveType.CONCEPTUAL, CognitiveType.DESIGN_ANALYSIS],
+        ExamDifficulty.COMPLEX:     [CognitiveType.DESIGN_ANALYSIS],
+        ExamDifficulty.GATEKEEPER:  [CognitiveType.DESIGN_ANALYSIS]
+    }
+}
 
-@dataclass
-class QuestionSlot:
+# --- ENTIDAD DE DOMINIO (ADAPTADA A PYDANTIC) ---
+class ExamSlot(BaseModel):
+    """Representa un 'hueco' en el examen que luego la IA rellenará"""
     slot_index: int
     difficulty: ExamDifficulty
     topic_id: str
-    points: float  
-    # El tipo cognitivo es constante para el examen (según la asignatura)
-    cognitive_target: CognitiveType 
+    points: float
+    cognitive_target: CognitiveType
 
 class ExamBlueprintBuilder:
-    def __init__(self, config: BlueprintConfig = None):
-        self.config = config or BlueprintConfig()
+    def __init__(self):
+        # Configuración base de puntos
+        self.base_points = {
+            ExamDifficulty.FUNDAMENTAL: 1.0,
+            ExamDifficulty.APPLIED: 1.5,
+            ExamDifficulty.COMPLEX: 2.5,
+            ExamDifficulty.GATEKEEPER: 4.0
+        }
 
-    def create_blueprint(self, config: ExamConfig, available_topics: List[str]) -> List[QuestionSlot]:
+    def create_blueprint(self, config: ExamConfig, available_topics: List[str]) -> List[ExamSlot]:
         """
-        Genera la estructura. 
-        CAMBIO CLAVE: El CognitiveType viene del Curso (config.course_cognitive_type),
-        ya no depende de si la pregunta es fácil o difícil.
+        Crea un plan de examen equilibrado, variando temas y tipos cognitivos.
         """
-        slots = []
         total_questions = config.num_questions
         if total_questions <= 0: return []
-        
-        # 1. DISTRIBUCIÓN DE DIFICULTAD (Esto se mantiene)
-        # Un examen 'Difícil' de Historia tendrá muchas preguntas 'Hard' (Declarativas Complejas)
-        if config.difficulty == ExamDifficulty.HARD:
-            ratios = {ExamDifficulty.EASY: 0.1, ExamDifficulty.MEDIUM: 0.4, ExamDifficulty.HARD: 0.5}
-        elif config.difficulty == ExamDifficulty.EASY:
-            ratios = {ExamDifficulty.EASY: 0.6, ExamDifficulty.MEDIUM: 0.3, ExamDifficulty.HARD: 0.1}
-        else: 
-            ratios = {ExamDifficulty.EASY: 0.3, ExamDifficulty.MEDIUM: 0.5, ExamDifficulty.HARD: 0.2}
 
-        n_easy = math.floor(total_questions * ratios[ExamDifficulty.EASY])
-        n_hard = math.floor(total_questions * ratios[ExamDifficulty.HARD])
-        n_medium = total_questions - n_easy - n_hard 
-
-        difficulties = (
-            [ExamDifficulty.EASY] * n_easy +
-            [ExamDifficulty.MEDIUM] * n_medium +
-            [ExamDifficulty.HARD] * n_hard
-        )
+        # 1. CALCULAR DISTRIBUCIÓN DE DIFICULTAD
+        difficulty_counts = self._calculate_difficulty_distribution(total_questions, config.target_difficulty)
         
-        # 2. ASIGNACIÓN
-        if not available_topics:
-            available_topics = ["general"]
-            
-        temp_slots = []
+        # Aplanamos la lista (Ej: [Easy, Easy, Medium, Hard...])
+        slot_difficulties = []
+        for diff, count in difficulty_counts.items():
+            slot_difficulties.extend([diff] * count)
+        
+        # Ordenamos por dificultad ascendente (Curva de aprendizaje estándar)
+        # Esto implementa implícitamente un patrón "Adaptive/Linear"
+        slot_difficulties.sort(key=lambda x: self.base_points.get(x, 0))
+
+        slots = []
         raw_total_points = 0.0
 
-        for i, diff in enumerate(difficulties):
-            topic = available_topics[i % len(available_topics)]
+        # Si no hay temas disponibles, fallback
+        if not available_topics:
+            available_topics = ["General Engineering"]
+
+        # 2. ASIGNACIÓN INTELIGENTE (Topics & Cognitive)
+        for i, difficulty in enumerate(slot_difficulties):
             
-            raw_pts = self.config.base_points.get(diff.value, 1.0)
+            # A. Selección de Tema (Ponderada)
+            topic = self._select_topic_weighted(available_topics, config.topics_include, i)
+            
+            # B. Selección Cognitiva (Usando tu Matriz)
+            # Por defecto asumimos 'technical' para ingeniería
+            cog_type = self._select_cognitive_type(difficulty, mode="technical")
+
+            raw_pts = self.base_points.get(difficulty, 1.0)
             raw_total_points += raw_pts
-            
-            # --- CORRECCIÓN AQUÍ ---
-            # Antes: Calculábamos el tipo según la dificultad.
-            # Ahora: Usamos estrictamente el tipo del curso.
-            # Un problema fácil de mates es PROCEDURAL. Uno difícil también.
-            cog_type = config.course_cognitive_type 
-            
-            temp_slots.append({
-                "index": i + 1,
-                "diff": diff,
-                "topic": topic,
-                "raw_pts": raw_pts,
-                "cog": cog_type
-            })
 
-        # 3. NORMALIZACIÓN (Suma 10)
-        scale_factor = self.config.target_score / raw_total_points if raw_total_points > 0 else 1.0
-
-        for item in temp_slots:
-            final_points = round(item["raw_pts"] * scale_factor, 2)
-            
-            slots.append(QuestionSlot(
-                slot_index=item["index"],
-                difficulty=item["diff"],
-                topic_id=item["topic"],
-                points=final_points,
-                cognitive_target=item["cog"]
+            slots.append(ExamSlot(
+                slot_index=i + 1,
+                difficulty=difficulty,
+                topic_id=topic,
+                points=raw_pts, # Se ajustará en el paso 3
+                cognitive_target=cog_type
             ))
+
+        # 3. NORMALIZACIÓN DE PUNTUACIÓN (Target: 10.0)
+        target_score = 10.0
+        scale_factor = target_score / raw_total_points if raw_total_points > 0 else 1.0
+        
+        current_sum = 0.0
+        for slot in slots:
+            slot.points = round(slot.points * scale_factor, 2)
+            current_sum += slot.points
             
-        # Ajuste decimal final
-        current_sum = sum(s.points for s in slots)
-        diff_sum = self.config.target_score - current_sum
-        if slots and abs(diff_sum) > 0.01:
-            slots[-1].points = round(slots[-1].points + diff_sum, 2)
+        # Ajuste del último decimal para exactitud perfecta
+        diff = target_score - current_sum
+        if slots and abs(diff) > 0.001:
+            slots[-1].points = round(slots[-1].points + diff, 2)
 
         return slots
+
+    def _calculate_difficulty_distribution(self, n_questions: int, target: ExamDifficulty) -> Dict[ExamDifficulty, int]:
+        """Define cuántas preguntas de cada tipo según la dificultad global deseada"""
+        
+        # Ratios definidos como porcentajes (TU LÓGICA)
+        ratios = {
+            ExamDifficulty.FUNDAMENTAL: { # Examen Fácil
+                ExamDifficulty.FUNDAMENTAL: 0.6, 
+                ExamDifficulty.APPLIED: 0.3, 
+                ExamDifficulty.COMPLEX: 0.1,
+                ExamDifficulty.GATEKEEPER: 0.0
+            },
+            ExamDifficulty.APPLIED: { # Examen Estándar
+                ExamDifficulty.FUNDAMENTAL: 0.2, 
+                ExamDifficulty.APPLIED: 0.5, 
+                ExamDifficulty.COMPLEX: 0.3,
+                ExamDifficulty.GATEKEEPER: 0.0
+            },
+            ExamDifficulty.COMPLEX: { # Examen Difícil
+                ExamDifficulty.FUNDAMENTAL: 0.1, 
+                ExamDifficulty.APPLIED: 0.3, 
+                ExamDifficulty.COMPLEX: 0.4,
+                ExamDifficulty.GATEKEEPER: 0.2
+            },
+            ExamDifficulty.GATEKEEPER: { # Modo "Dios"
+                ExamDifficulty.FUNDAMENTAL: 0.0, 
+                ExamDifficulty.APPLIED: 0.2, 
+                ExamDifficulty.COMPLEX: 0.4,
+                ExamDifficulty.GATEKEEPER: 0.4
+            }
+        }
+        
+        selected_ratios = ratios.get(target, ratios[ExamDifficulty.APPLIED])
+        
+        distribution = {}
+        assigned_count = 0
+        
+        # Asignar base
+        for diff, ratio in selected_ratios.items():
+            count = math.floor(n_questions * ratio)
+            distribution[diff] = count
+            assigned_count += count
+            
+        # Repartir el remanente a la categoría dominante (target)
+        remainder = n_questions - assigned_count
+        if remainder > 0:
+            distribution[target] = distribution.get(target, 0) + remainder
+            
+        return distribution
+
+    def _select_topic_weighted(self, available: List[str], focus: List[str], index: int) -> str:
+        """
+        Da prioridad a los temas de foco (60%), pero no olvida el resto.
+        """
+        if not available: return "General"
+        
+        # Si hay focus topics, los usamos en índices pares (0, 2, 4...)
+        if focus and len(focus) > 0:
+            if index % 2 == 0:
+                return focus[index % len(focus)]
+        
+        # Si no, rotamos sobre todos los disponibles
+        return available[index % len(available)]
+
+    def _select_cognitive_type(self, difficulty: ExamDifficulty, mode: str = "technical") -> CognitiveType:
+        """Selecciona el tipo cognitivo usando la Matriz y un poco de aleatoriedad controlada"""
+        options = COGNITIVE_MATRIX.get(mode, COGNITIVE_MATRIX["technical"]).get(difficulty)
+        
+        if not options:
+            return CognitiveType.COMPUTATIONAL # Fallback seguro
+            
+        return random.choice(options)

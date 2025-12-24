@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plantilla Examen Conceptual/Práctico</title>
+    <style>
+        /* ESTÉTICA ACADÉMICA (Serif) */
+        @import url('https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,300;0,400;0,700;1,400&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400&display=swap'); /* Para números */
+
+        :root {
+            --font-main: 'Merriweather', 'Times New Roman', serif;
+            --font-mono: 'Roboto Mono', monospace;
+            --color-text: #111;
+            --color-border: #000;
+            --bg-paper: #fff;
+            --bg-table-header: #f4f4f4;
+        }
+
+        body {
+            font-family: var(--font-main);
+            max-width: 210mm; /* A4 */
+            margin: 0 auto;
+            padding: 20mm;
+            background: var(--bg-paper);
+            color: var(--color-text);
+            box-sizing: border-box;
+            line-height: 1.5;
+        }
+
+        /* 1. HEADER ESTÁNDAR */
+        header {
+            text-align: center;
+            border-bottom: 2px solid var(--color-border);
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        .header-main { font-size: 18pt; font-weight: bold; text-transform: uppercase; margin: 0; }
+        .header-sub { font-size: 14pt; font-style: italic; margin: 5px 0; }
+        .header-meta { margin-top: 10px; font-size: 11pt; }
+
+        /* 2. DATOS ALUMNO (Compacto) */
+        .student-info {
+            display: flex;
+            justify-content: space-between;
+            border: 1px solid #ccc;
+            padding: 10px 20px;
+            margin-bottom: 40px;
+            background-color: #fafafa;
+        }
+        .info-field { font-weight: bold; }
+
+        /* 3. COMPONENTES DE DATOS (Lo especial de este template) */
+        
+        /* Contenedor del Problema */
+        .problem-container {
+            margin-bottom: 50px;
+            page-break-inside: avoid;
+        }
+
+        .problem-title {
+            font-size: 14pt;
+            font-weight: bold;
+            border-left: 5px solid #333;
+            padding-left: 10px;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+        }
+
+        .problem-statement {
+            margin-bottom: 20px;
+            text-align: justify;
+        }
+
+        /* Tablas de Datos (Balances, Costes, etc.) */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 10pt;
+        }
+
+        .data-table th, .data-table td {
+            border: 1px solid #888;
+            padding: 6px 10px;
+        }
+
+        .data-table th {
+            background-color: var(--bg-table-header);
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .data-table td.numeric {
+            text-align: right;
+            font-family: var(--font-mono);
+        }
+
+        /* Layout de Balance (Dos columnas) */
+        .balance-sheet-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        /* Listas de Puntos (Condiciones del problema) */
+        .conditions-list {
+            list-style-type: decimal;
+            padding-left: 20px;
+            margin-bottom: 20px;
+        }
+        .conditions-list li { margin-bottom: 5px; }
+
+        /* 4. ZONA DE RESPUESTA (Sub-apartados A, B, C) */
+        .sub-question {
+            margin-top: 20px;
+            margin-left: 10px;
+        }
+
+        .sub-label {
+            font-weight: bold;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .calculation-area {
+            width: 100%;
+            min-height: 150px;
+            border: 1px solid #ddd;
+            background-image: 
+                linear-gradient(#eee 1px, transparent 1px),
+                linear-gradient(90deg, #eee 1px, transparent 1px);
+            background-size: 20px 20px; /* Fondo cuadriculado para cálculos */
+            background-color: #fff;
+            font-family: var(--font-mono);
+            padding: 10px;
+            box-sizing: border-box;
+            resize: vertical;
+        }
+
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1 class="header-main">{{NOMBRE_UNIVERSIDAD}}</h1>
+        <h2 class="header-sub">{{FACULTAD}}</h2>
+        <div class="header-meta">
+            <strong>Asignatura:</strong> {{ASIGNATURA}} | 
+            <strong>Convocatoria:</strong> {{FECHA}}
+        </div>
+    </header>
+
+    <div class="student-info">
+        <span class="info-field">Estudiante: _________________________________</span>
+        <span class="info-field">Grupo: ________</span>
+    </div>
+
+    <section class="problem-container">
+        <div class="problem-title">Pregunta 1: {{TITULO_PROBLEMA}}</div>
+        
+        <div class="problem-statement">
+            {{ENUNCIADO_DEL_PROBLEMA_TEXTO}}
+        </div>
+
+        <div class="balance-sheet-grid">
+            <table class="data-table">
+                <thead><tr><th colspan="2">ACTIVO</th></tr></thead>
+                <tbody>
+                    <tr><td>{{ITEM_ACTIVO_1}}</td><td class="numeric">{{VALOR_1}} €</td></tr>
+                    <tr><td>{{ITEM_ACTIVO_2}}</td><td class="numeric">{{VALOR_2}} €</td></tr>
+                    <tr><td><strong>TOTAL ACTIVO</strong></td><td class="numeric"><strong>{{TOTAL_ACTIVO}} €</strong></td></tr>
+                </tbody>
+            </table>
+            
+            <table class="data-table">
+                <thead><tr><th colspan="2">PATRIMONIO NETO Y PASIVO</th></tr></thead>
+                <tbody>
+                    <tr><td>{{ITEM_PASIVO_1}}</td><td class="numeric">{{VALOR_1}} €</td></tr>
+                    <tr><td>{{ITEM_PASIVO_2}}</td><td class="numeric">{{VALOR_2}} €</td></tr>
+                    <tr><td><strong>TOTAL PN Y PASIVO</strong></td><td class="numeric"><strong>{{TOTAL_PASIVO}} €</strong></td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="problem-statement">Se facilitan los siguientes movimientos/datos adicionales:</div>
+        
+        <ol class="conditions-list">
+            <li>{{CONDICION_1}}</li>
+            <li>{{CONDICION_2}}</li>
+            <li>{{CONDICION_3}}</li>
+        </ol>
+
+        <div class="sub-question">
+            <span class="sub-label">A) {{PREGUNTA_APARTADO_A}}</span>
+            <textarea class="calculation-area" placeholder="Espacio para cálculos o desarrollo..."></textarea>
+        </div>
+
+        <div class="sub-question">
+            <span class="sub-label">B) {{PREGUNTA_APARTADO_B}}</span>
+            <textarea class="calculation-area"></textarea>
+        </div>
+    </section>
+
+    <section class="problem-container">
+        <div class="problem-title">Pregunta 2: {{TITULO_PROBLEMA_2}}</div>
+        
+        <div class="problem-statement">
+            {{ENUNCIADO_PROBLEMA_2}}
+        </div>
+
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Concepto</th>
+                    <th>Cantidad</th>
+                    <th>Observaciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>{{DATO_TABLA_1}}</td>
+                    <td class="numeric">{{VALOR_1}}</td>
+                    <td>{{OBS_1}}</td>
+                </tr>
+                <tr>
+                    <td>{{DATO_TABLA_2}}</td>
+                    <td class="numeric">{{VALOR_2}}</td>
+                    <td>{{OBS_2}}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="sub-question">
+            <span class="sub-label">A) {{PREGUNTA_APARTADO_A}}</span>
+            <textarea class="calculation-area"></textarea>
+        </div>
+    </section>
+
+</body>
+</html>
