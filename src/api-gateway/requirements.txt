@@ -5,3 +5,14 @@ pydantic-settings==2.1.0
 aio-pika==9.4.0
 python-dotenv==1.0.1
 httpx==0.26.0
+python-multipart
+# --- Database & Migrations ---
+sqlalchemy
+psycopg2-binary
+alembic
+# --- Seguridad y Autenticación ---
+passlib[bcrypt]
+bcrypt==4.0.1
+python-jose[cryptography]
+python-multipart  # Necesario para el login de formulario (OAuth2)
+email-validator

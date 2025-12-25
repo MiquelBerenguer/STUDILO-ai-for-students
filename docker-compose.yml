@@ -509,24 +509,30 @@ services:
     container_name: tutor-ia-api-gateway
     restart: unless-stopped
     ports:
-      - "8000:8000"  # Puerto estándar de FastAPI
+      - "8000:8000"
     environment:
+      # --- CRÍTICO: Configuración de Python ---
+      - PYTHONPATH=/app  # Permite importar src.shared correctamente
+      
       # --- Configuración RabbitMQ ---
       - RABBITMQ_HOST=tutor-ia-rabbitmq
-      - RABBITMQ_USER=${RABBITMQ_USER}       # Lee del .env (REDACTED)
-      - RABBITMQ_PASS=${RABBITMQ_PASSWORD}   # Lee del .env (tu contraseña real)
+      - RABBITMQ_USER=${RABBITMQ_USER}
+      - RABBITMQ_PASS=${RABBITMQ_PASSWORD}
       - RABBITMQ_VHOST=tutor_ia
-      # --- Configuración Redis (Lo dejaremos preparado para sesiones) ---
+      
+      # --- Configuración Redis ---
       - REDIS_SENTINEL_HOST=tutor-ia-redis-sentinel
       - REDIS_SENTINEL_PORT=26379
       - REDIS_MASTER_SET=tutormaster
     depends_on:
       - rabbitmq
       - redis-sentinel
+      - postgres-master # <--- NUEVO: Necesario para que Alembic encuentre la DB
     networks:
-      - tutor-ia-network  # CRÍTICO: Coincide con tu configuración antigua
+      - tutor-ia-network
     volumes:
-      - ./src/api-gateway:/app # Hot-reload activado
+      - ./src/api-gateway:/app       # Monta el código del servicio
+      - ./src/shared:/app/src/shared # <--- LA SOLUCIÓN: Monta la librería compartida
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
