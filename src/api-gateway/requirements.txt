@@ -16,3 +16,4 @@ bcrypt==4.0.1
 python-jose[cryptography]
 python-multipart  # Necesario para el login de formulario (OAuth2)
 email-validator
+asyncpg

@@ -2,6 +2,8 @@ from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict
 from datetime import date
 from src.services.learning.domain.entities import ExamDifficulty, CognitiveType
+from typing import List, Optional, Literal
+from pydantic import BaseModel
 
 # --- INPUTS ---
 
@@ -64,3 +66,29 @@ class PlanSessionResponse(BaseModel):
     date: date
     duration: int
     focus_score: float
+
+# Estructura de un mensaje individual
+class Message(BaseModel):
+    role: Literal["user", "assistant", "system"]
+    content: str
+
+# Entrada del Chat
+class ChatRequest(BaseModel):
+    message: str
+    # IDs de archivos para RAG (Retrieval Augmented Generation)
+    context_files: List[str] = [] 
+    # El cliente mantiene el estado y lo envía cada vez (Stateless Server)
+    conversation_history: List[Message] = [] 
+    course_context: Optional[str] = None
+
+# Salida del Chat
+class ChatResponse(BaseModel):
+    response: str
+    methodology_step: str 
+    sources: List[str] = []
+
+
+class TaskStatusResponse(BaseModel):
+    task_id: str
+    status: str
+    download_url: Optional[str] = None

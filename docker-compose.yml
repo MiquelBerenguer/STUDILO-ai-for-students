@@ -504,35 +504,33 @@ services:
   # API Gateway - Punto de entrada principal
   api-gateway:
     build: 
-      context: ./src/api-gateway
-      dockerfile: Dockerfile
+      context: .                    # <--- CAMBIO 1: Contexto RAÍZ (el punto)
+      dockerfile: src/api-gateway/Dockerfile # <--- CAMBIO 2: Ruta al Dockerfile
     container_name: tutor-ia-api-gateway
     restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
-      # --- CRÍTICO: Configuración de Python ---
-      - PYTHONPATH=/app  # Permite importar src.shared correctamente
-      
-      # --- Configuración RabbitMQ ---
+      - PYTHONPATH=/app             # Importante para Python
       - RABBITMQ_HOST=tutor-ia-rabbitmq
       - RABBITMQ_USER=${RABBITMQ_USER}
       - RABBITMQ_PASS=${RABBITMQ_PASSWORD}
       - RABBITMQ_VHOST=tutor_ia
-      
-      # --- Configuración Redis ---
       - REDIS_SENTINEL_HOST=tutor-ia-redis-sentinel
       - REDIS_SENTINEL_PORT=26379
       - REDIS_MASTER_SET=tutormaster
     depends_on:
       - rabbitmq
       - redis-sentinel
-      - postgres-master # <--- NUEVO: Necesario para que Alembic encuentre la DB
+      - postgres-master 
     networks:
       - tutor-ia-network
     volumes:
-      - ./src/api-gateway:/app       # Monta el código del servicio
-      - ./src/shared:/app/src/shared # <--- LA SOLUCIÓN: Monta la librería compartida
+      # --- CAMBIO 3: MONTAJE INTELIGENTE ---
+      # Montamos carpeta por carpeta para mantener la estructura '/app/src/...'
+      - ./src/api-gateway:/app             # <--- Correcto: Montamos en la raíz de trabajo
+      - ./src/shared:/app/src/shared       # Librería compartida
+      - ./src/services:/app/src/services   # Servicios externos
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s

@@ -32,3 +32,20 @@ class UserRepository:
         except Exception as e:
             self.db.rollback()
             raise e
+
+    def update_password(self, email: str, new_hashed_password: str) -> Optional[User]:
+       """
+       Busca un usuario por email y actualiza su contraseña.
+       """
+       user = self.get_by_email(email)
+       if user:
+           user.hashed_password = new_hashed_password
+           try:
+               self.db.add(user)
+               self.db.commit()
+               self.db.refresh(user)
+               return user
+           except Exception as e:
+               self.db.rollback()
+               raise e
+       return None
