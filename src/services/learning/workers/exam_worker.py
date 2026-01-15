@@ -25,8 +25,7 @@ from src.services.learning.infrastructure.pdf_renderer import PDFRenderer
 
 # --- IMPORTS DE INFRAESTRUCTURA ---
 from src.shared.vectordb.qdrant import QdrantService
-# Importamos el Mock de IA que creamos antes
-from src.services.ai.client import MockAIService 
+from src.services.ai.service import AIService 
 # Importamos solo las INTERFACES (los contratos)
 from src.shared.database.repositories import PatternRepository, TopicMasteryRepository
 
@@ -83,7 +82,7 @@ class ExamGenerationWorker:
         logger.info("🧠 Inicializando Core de Ingeniería (Modo Testing)...")
         
         # Servicios Base (Mockeados para Fase 3)
-        self.ai_service = MockAIService() 
+        self.ai_service = AIService() 
         self.qdrant = QdrantService()
         
         # Repositorios (USAMOS LOS MOCKS AQUÍ)

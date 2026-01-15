@@ -17,6 +17,11 @@ class EngineeringBranch(str, Enum):
     BIOMEDICAL = "biomedical"
     TELECOMMUNICATIONS = "teleco"
 
+class Language(str, Enum):
+    ES = "es"
+    EN = "en"
+    CAT = "cat"
+
 class CognitiveType(str, Enum):
     COMPUTATIONAL = "computational" # Procedural / Cálculo
     CONCEPTUAL = "conceptual"       # Declarativo / Teoría

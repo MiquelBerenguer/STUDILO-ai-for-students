@@ -3,7 +3,7 @@ from src.services.learning.domain.entities import ExamConfig, ExamDifficulty
 # Mocks/Interfaces
 from src.shared.database.repositories import TopicMasteryRepository
 from src.shared.vectordb.client import VectorDBClient
-from src.services.ai.client import AIService
+from src.services.ai.service import AIService
 
 class ContentSelector:
     def __init__(

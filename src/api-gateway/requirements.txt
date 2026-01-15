@@ -17,3 +17,7 @@ python-jose[cryptography]
 python-multipart  # Necesario para el login de formulario (OAuth2)
 email-validator
 asyncpg
+
+# --- IA DEPENDENCIES ---
+openai>=1.12.0
+tenacity==8.2.3

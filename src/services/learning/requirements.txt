@@ -1,12 +1,35 @@
+# --- CORE WEB ---
 fastapi
 uvicorn
 pydantic
 requests
-# drivers de base de datos
+python-dotenv==1.0.1
+
+# --- BASE DE DATOS & VECTORES ---
 sqlalchemy
 psycopg2-binary
-# cliente de cola (necesario para lo que vamos a hacer luego)
+qdrant-client>=1.7.3
+
+# --- MENSAJERÍA (RabbitMQ) ---
+# Usamos aio-pika para el worker asíncrono
+aio-pika==9.4.0
+# Mantenemos pika por si acaso alguna utilidad sincrona lo requiere
 pika
+
+# --- ALMACENAMIENTO ---
+minio==7.2.0
+
+# --- INTELIGENCIA ARTIFICIAL ---
+openai>=1.12.0
+tenacity==8.2.3
+
+# --- GENERACIÓN DE PDF Y TEMPLATES ---
+# Pinned versions para evitar conflictos
+jinja2==3.1.3
 reportlab>=4.0.0
-jinja2>=3.1.0
-weasyprint>=60.0.0
+weasyprint==61.2
+
+# --- DEPENDENCIAS DE BAJO NIVEL (CRÍTICO PARA DOCKER/ALPINE) ---
+# Estas son necesarias para que WeasyPrint no falle al compilar
+pydyf==0.10.0
+cffi==1.16.0
