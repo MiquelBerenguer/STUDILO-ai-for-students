@@ -17,15 +17,36 @@ class CreateExamRequest(BaseModel):
 
     @field_validator('difficulty')
     def normalize_difficulty(cls, v):
+        if isinstance(v, ExamDifficulty):
+            return v
+            
+        v_str = str(v).lower().strip()
+        
         mapping = {
-            "facil": ExamDifficulty.EASY,
-            "easy": ExamDifficulty.EASY,
-            "medio": ExamDifficulty.MEDIUM,
-            "medium": ExamDifficulty.MEDIUM,
-            "dificil": ExamDifficulty.HARD,
-            "hard": ExamDifficulty.HARD,
+            # Mapeos a FUNDAMENTAL (Tu equivalente a Easy)
+            "facil": ExamDifficulty.FUNDAMENTAL,
+            "easy": ExamDifficulty.FUNDAMENTAL,
+            "fundamental": ExamDifficulty.FUNDAMENTAL,
+            "beginner": ExamDifficulty.FUNDAMENTAL,
+            
+            # Mapeos a APPLIED (Tu equivalente a Medium)
+            "medio": ExamDifficulty.APPLIED,
+            "medium": ExamDifficulty.APPLIED,
+            "applied": ExamDifficulty.APPLIED,
+            "intermedio": ExamDifficulty.APPLIED,
+            
+            # Mapeos a COMPLEX (Tu equivalente a Hard)
+            "dificil": ExamDifficulty.COMPLEX,
+            "hard": ExamDifficulty.COMPLEX,
+            "complex": ExamDifficulty.COMPLEX,
+            "avanzado": ExamDifficulty.COMPLEX,
+            
+            # Mapeos especiales
+            "gatekeeper": ExamDifficulty.GATEKEEPER
         }
-        return mapping.get(v.lower().strip(), ExamDifficulty.MEDIUM)
+        
+        # Fallback seguro: Si no entiende, por defecto APPLIED (Nivel medio)
+        return mapping.get(v_str, ExamDifficulty.APPLIED)
 
 # Inputs para el Estilo (Nuevo Endpoint que añadimos antes)
 class StyleRequest(BaseModel):

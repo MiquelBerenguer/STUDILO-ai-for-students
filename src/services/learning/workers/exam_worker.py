@@ -14,7 +14,8 @@ if "/app" not in sys.path:
 
 # --- IMPORTS DE DOMINIO ---
 from src.services.learning.domain.entities import (
-    ExamConfig, ExamDifficulty, CognitiveType
+    ExamConfig, ExamDifficulty, CognitiveType,
+    PedagogicalPattern
 )
 # --- IMPORTS DE LÓGICA ---
 from src.services.learning.logic.exam_generator import ExamGenerator
@@ -26,7 +27,6 @@ from src.services.learning.infrastructure.pdf_renderer import PDFRenderer
 # --- IMPORTS DE INFRAESTRUCTURA ---
 from src.shared.vectordb.qdrant import QdrantService
 from src.services.ai.service import AIService 
-# Importamos solo las INTERFACES (los contratos)
 from src.shared.database.repositories import PatternRepository, TopicMasteryRepository
 
 # Configuración de Logging
@@ -35,20 +35,14 @@ logger = logging.getLogger("ExamWorker")
 
 # ==============================================================================
 #  MOCKS DE REPOSITORIOS (Simuladores para Fase 3)
-#  Esto permite que el sistema funcione sin Base de Datos real conectada aún.
 # ==============================================================================
 
 class MockPatternRepository(PatternRepository):
-    """Simula buscar patrones pedagógicos en la DB."""
     async def find_patterns(self, scope, **kwargs):
-        # Retornamos una lista vacía o un patrón por defecto simulado si fuera necesario.
-        # El StyleSelector sabrá manejar esto y usará un default.
         return []
 
 class MockMasteryRepository(TopicMasteryRepository):
-    """Simula conocer qué temas lleva mal el alumno."""
     async def get_weakest_topics(self, student_id, course_id, limit=5):
-        # Simulamos que el alumno falla en "Dinámica"
         return [{"topic": "Dinámica de la Partícula", "mastery": 0.2, "failures": 3}]
 
     async def get_all_topics(self, course_id):
@@ -63,7 +57,7 @@ class ExamGenerationWorker:
         # 1. Configuración de RabbitMQ & MinIO
         self.rabbitmq_url = os.getenv('RABBITMQ_URL', 'amqp://guest:guest@rabbitmq:5672/')
         
-        # MinIO con reintentos básicos de conexión si hiciera falta
+        # MinIO
         self.minio = Minio(
             os.getenv('MINIO_ENDPOINT', 'minio:9000'),
             access_key=os.getenv('MINIO_USER', 'REDACTED'),
@@ -71,30 +65,24 @@ class ExamGenerationWorker:
             secure=False
         )
         self.bucket_name = "generated-exams"
-        # Intentamos crear el bucket (puede fallar si MinIO no está listo, lo manejamos)
         try:
             if not self.minio.bucket_exists(self.bucket_name):
                 self.minio.make_bucket(self.bucket_name)
         except Exception as e:
             logger.warning(f"[WARNING] No se pudo conectar a MinIO al inicio: {e}")
 
-        # 2. INYECCIÓN DE DEPENDENCIAS (Ensamblaje con MOCKS)
+        # 2. INYECCIÓN DE DEPENDENCIAS
         logger.info("🧠 Inicializando Core de Ingeniería (Modo Testing)...")
         
-        # Servicios Base (Mockeados para Fase 3)
         self.ai_service = AIService() 
         self.qdrant = QdrantService()
+        self.pattern_repo = MockPatternRepository()
+        self.mastery_repo = MockMasteryRepository()
         
-        # Repositorios (USAMOS LOS MOCKS AQUÍ)
-        self.pattern_repo = MockPatternRepository()     # <--- CORREGIDO
-        self.mastery_repo = MockMasteryRepository()     # <--- CORREGIDO
-        
-        # Piezas Lógicas
         self.content_selector = ContentSelector(self.mastery_repo, self.qdrant, self.ai_service)
         self.style_selector = StyleSelector(self.pattern_repo)
         self.blueprint_builder = ExamBlueprintBuilder()
         
-        # El Generador
         self.generator = ExamGenerator(
             content_selector=self.content_selector, 
             style_selector=self.style_selector, 
@@ -115,9 +103,7 @@ class ExamGenerationWorker:
                 logger.info(f"⚡ [Task {task_id}] Procesando solicitud para: {course_id}")
 
                 # A. Configuración
-                # Fallback seguro para cognitive_type (default a COMPUTATIONAL)
                 cog_type_str = data.get('cognitive_type', 'computational')
-                # Mapeo manual simple por seguridad
                 cog_type = CognitiveType.COMPUTATIONAL
                 if cog_type_str == 'conceptual': cog_type = CognitiveType.CONCEPTUAL
                 elif cog_type_str == 'design': cog_type = CognitiveType.DESIGN_ANALYSIS
@@ -126,7 +112,10 @@ class ExamGenerationWorker:
                     student_id=student_id,
                     course_id=course_id,
                     target_difficulty=ExamDifficulty(data.get('difficulty', 'applied')),
-                    pattern=None, # Dejamos que el StyleSelector elija
+                    
+                    # CORRECCIÓN: Usamos un patrón por defecto en lugar de None
+                    pattern=PedagogicalPattern.ADAPTIVE, 
+                    
                     num_questions=data.get('num_questions', 5),
                     include_code_questions=data.get('include_code', False),
                     topics_include=data.get('topics', [])
@@ -164,8 +153,27 @@ class ExamGenerationWorker:
         channel = await connection.channel()
         await channel.set_qos(prefetch_count=1)
         
-        queue = await channel.declare_queue("exam.generate.job", durable=True)
-        logger.info("🚀 Worker escuchando peticiones en 'exam.generate.job'...")
+        # --- CONFIGURACIÓN ROBUSTA (Igualando al Gateway) ---
+        # 1. Aseguramos que existe el mecanismo de Dead Letter (DLX)
+        dlx = await channel.declare_exchange('dlx', aio_pika.ExchangeType.DIRECT)
+        dlq = await channel.declare_queue("exam.generate.dlq", durable=True)
+        await dlq.bind(dlx, routing_key='failed_task')
+
+        # 2. Declaramos la cola principal con los MISMOS argumentos que el Gateway
+        # Esto soluciona el error PRECONDITION_FAILED
+        queue_args = {
+            'x-dead-letter-exchange': 'dlx',
+            'x-dead-letter-routing-key': 'failed_task',
+            'x-message-ttl': 300000  # 5 minutos (Debe coincidir con Gateway)
+        }
+        
+        # Declaramos la cola con argumentos
+        queue = await channel.declare_queue(
+            "exam.generate.job", 
+            durable=True, 
+            arguments=queue_args
+        )
+        logger.info("🚀 Worker escuchando peticiones en 'exam.generate.job' (Modo Robusto: TTL+DLQ)...")
         
         await queue.consume(self.process_job)
         await asyncio.Future()

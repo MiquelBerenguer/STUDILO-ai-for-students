@@ -37,7 +37,7 @@ class AIService:
         """
         # CORRECCIÓN DE INGENIERÍA: Pydantic v2 guarda los settings en minúscula
         self.client = client or AsyncOpenAI(api_key=settings.openai_api_key)
-        self.model = settings.openai_model
+        self.model = "gpt-4o-mini"
 
     @retry(
         stop=stop_after_attempt(3),

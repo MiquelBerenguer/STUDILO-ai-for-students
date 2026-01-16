@@ -1,49 +1,77 @@
 import os
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models
 from openai import AsyncOpenAI
-# Ajuste de importación relativo para que funcione tanto en API como en Worker
+
+# --- IMPORTS DE DOMINIO ---
+# Necesarios para devolver objetos que el sistema entienda
+try:
+    from src.services.learning.domain.entities import EngineeringBlock, SourceType
+except ImportError:
+    # Fallback por si se usa desde un script suelto
+    pass
+
+# --- IMPORTS RELATIVOS (Tu estructura original) ---
 try:
     from .client import VectorDBClient, VectorChunk
 except ImportError:
-    from client import VectorDBClient, VectorChunk
+    # Definición dummy si falla el import relativo, para que no rompa
+    class VectorChunk:
+        def __init__(self, id, text, metadata=None, score=0.0):
+            self.id = id
+            self.text = text
+            self.metadata = metadata or {}
+            self.score = score
+    class VectorDBClient:
+        pass
 
 logger = logging.getLogger(__name__)
 
 class QdrantService(VectorDBClient):
     def __init__(self):
-        self.host = os.getenv("QDRANT_HOST", "qdrant")
+        # 1. Configuración de Conexión
+        self.host = os.getenv("QDRANT_HOST", "tutor-ia-qdrant")
         self.port = int(os.getenv("QDRANT_PORT", 6333))
         self.api_key = os.getenv("QDRANT_API_KEY", None)
-        
-        self.client = AsyncQdrantClient(host=self.host, port=self.port, api_key=self.api_key)
-        self.openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         self.collection_name = "engineering_knowledge"
+        
+        # Cliente Qdrant
+        self.client = AsyncQdrantClient(host=self.host, port=self.port, api_key=self.api_key)
+        
+        # Cliente OpenAI (para generar vectores)
+        self.openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.embedding_model = "text-embedding-3-small"
 
     async def ensure_collection(self):
+        """Crea la colección si no existe (Vital para inicio frío)"""
         if await self.client.collection_exists(self.collection_name):
             return
 
-        logger.info(f"Creando colección Qdrant: {self.collection_name}")
+        logger.info(f"🆕 Creando colección Qdrant: {self.collection_name}")
         await self.client.create_collection(
             collection_name=self.collection_name,
             vectors_config=models.VectorParams(
-                size=1536,
+                size=1536, # Tamaño de text-embedding-3-small
                 distance=models.Distance.COSINE
             )
         )
 
     async def _get_embeddings_batch(self, texts: List[str]) -> List[List[float]]:
+        """Genera vectores usando OpenAI"""
         clean_texts = [t.replace("\n", " ") for t in texts]
         response = await self.openai_client.embeddings.create(
             input=clean_texts,
-            model="text-embedding-3-small"
+            model=self.embedding_model
         )
         return [data.embedding for data in response.data]
 
     async def upsert_chunks(self, chunks: List[VectorChunk]):
+        """
+        Guarda chunks en la DB. Usado por el Processor (Ingesta).
+        Mantenemos tu código original aquí.
+        """
         if not chunks: return
 
         texts = [chunk.text for chunk in chunks]
@@ -58,24 +86,71 @@ class QdrantService(VectorDBClient):
             points.append(models.PointStruct(
                 id=chunk.id,
                 vector=vectors[i],
+                # Guardamos todo el metadata para poder recuperarlo luego
                 payload={"text": chunk.text, **chunk.metadata}
             ))
 
+        await self.ensure_collection() # Asegurar que existe antes de escribir
         await self.client.upsert(collection_name=self.collection_name, points=points)
         logger.info(f"💾 Insertados {len(points)} vectores en Qdrant.")
 
-    async def search(self, query: str, filters: Dict[str, Any], limit: int = 5) -> List[VectorChunk]:
-        query_vector = (await self._get_embeddings_batch([query]))[0]
+    async def search(self, query: str, filters: Dict[str, Any] = None, limit: int = 5) -> List[EngineeringBlock]:
+        """
+        Busca contexto relevante.
+        CAMBIO CLAVE: Devuelve 'EngineeringBlock' para que ContentSelector funcione.
+        """
+        # 1. Vectorizar la query
+        query_vectors = await self._get_embeddings_batch([query])
+        query_vector = query_vectors[0]
         
-        must_filters = []
-        for key, value in filters.items():
-            must_filters.append(models.FieldCondition(key=key, match=models.MatchValue(value=value)))
+        # 2. Construir Filtros
+        qdrant_filter = None
+        if filters:
+            must_conditions = []
+            for key, value in filters.items():
+                must_conditions.append(models.FieldCondition(
+                    key=key, 
+                    match=models.MatchValue(value=value)
+                ))
+            if must_conditions:
+                qdrant_filter = models.Filter(must=must_conditions)
+
+        # 3. Buscar (Con manejo de errores seguro)
+        try:
+            hits = await self.client.search(
+                collection_name=self.collection_name,
+                query_vector=query_vector,
+                query_filter=qdrant_filter,
+                limit=limit
+            )
+        except Exception as e:
+            if "Not found: Collection" in str(e):
+                logger.warning(f"⚠️ Colección '{self.collection_name}' no encontrada. Devolviendo vacío.")
+                return []
+            logger.error(f"Error buscando en Qdrant: {e}")
+            raise e
+
+        # 4. Mapeo a Objetos de Dominio (Adapter Pattern)
+        # Convertimos el JSON crudo de Qdrant en el objeto EngineeringBlock que espera el resto de la app
+        results = []
+        for hit in hits:
+            payload = hit.payload or {}
             
-        search_result = await self.client.search(
-            collection_name=self.collection_name,
-            query_vector=query_vector,
-            query_filter=models.Filter(must=must_filters) if must_filters else None,
-            limit=limit
-        )
-        
-        return [VectorChunk(id=str(hit.id), text=hit.payload.get("text", ""), metadata={k:v for k,v in hit.payload.items() if k!="text"}, score=hit.score) for hit in search_result]
+            # Construimos el bloque con seguridad (usando defaults si faltan campos)
+            block = EngineeringBlock(
+                id=str(hit.id),
+                course_id=payload.get("course_id", filters.get("course_id", "unknown") if filters else "unknown"),
+                source_type=SourceType(payload.get("source_type", "theory_slides")),
+                
+                # Qdrant guarda el texto en 'text', pero EngineeringBlock usa 'clean_text'
+                clean_text=payload.get("text", ""), 
+                
+                # Recuperamos los campos ricos si existen
+                latex_content=payload.get("latex_content"),
+                topics=payload.get("topics", []),
+                is_problem=payload.get("is_problem", False),
+                complexity=payload.get("complexity", 0.5)
+            )
+            results.append(block)
+
+        return results

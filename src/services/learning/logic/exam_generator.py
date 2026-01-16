@@ -1,22 +1,25 @@
 import logging
 import asyncio
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Any
 
-# IMPORTS DE DOMINIO (Tus entidades intactas)
+# --- IMPORTS DE DOMINIO ---
 from src.services.learning.domain.entities import (
     ExamConfig, Exam, GeneratedQuestion, 
     QuestionType, CognitiveType,
     NumericalValidation, CodeValidation, MultipleChoiceValidation,
-    CodeTestCase, EngineeringBlock
+    CodeTestCase, EngineeringBlock, ExamDifficulty
 )
 
-# IMPORTS DE SERVICIOS
+# --- IMPORTS DE INFRAESTRUCTURA (NUEVO CEREBRO) ---
 from src.services.ai.service import AIService
-# IMPORTANTE: Ahora importamos desde la "Nueva Casa" en AI
-from src.services.ai.prompts import PromptManager 
+# Importamos los esquemas de la IA para poder leer su respuesta
+from src.services.ai.schemas import (
+    NumericQuestionAI, ChoiceQuestionAI, CodeQuestionAI, OpenQuestionAI,
+    ReasoningExamResponse
+)
 
-# IMPORTS DE LÓGICA (Tu Blueprint y Selectores intactos)
+# --- IMPORTS DE LÓGICA ---
 from src.services.learning.logic.content_selector import ContentSelector
 from src.services.learning.logic.style_selector import StyleSelector
 from src.services.learning.logic.blueprint import ExamBlueprintBuilder, ExamSlot
@@ -31,7 +34,6 @@ class ExamGenerator:
         ai_service: AIService,
         blueprint_builder: ExamBlueprintBuilder
     ):
-        # Todo esto sigue igual que antes
         self.content_selector = content_selector
         self.style_selector = style_selector
         self.ai_service = ai_service
@@ -41,11 +43,12 @@ class ExamGenerator:
         start_time = datetime.now()
         logger.info(f"🏗️  INICIANDO FACTORÍA DE EXAMEN: {config.course_id}")
 
-        # 1. SCOPE & BLUEPRINT (INTACTO: Tu lógica de estructura sigue aquí)
+        # 1. SCOPE & BLUEPRINT
         topics = await self.content_selector.get_available_topics(config)
         exam_slots = self.blueprint_builder.create_blueprint(config, topics)
         
         # 2. GENERACIÓN PARALELA
+        logger.info(f"🚀 Lanzando generación de {len(exam_slots)} preguntas en paralelo...")
         tasks = [
             self._generate_single_question_safely(slot, config) 
             for slot in exam_slots
@@ -60,10 +63,12 @@ class ExamGenerator:
             else:
                 logger.error(f"❌ Fallo generando Slot {i}: {result}")
         
+        # Umbral de calidad: Si fallan demasiadas, abortamos.
         if len(valid_questions) < len(exam_slots) * 0.8:
-            raise Exception("No se pudo generar un examen con la calidad mínima requerida.")
+            raise Exception(f"Fallo crítico: Solo se generaron {len(valid_questions)}/{len(exam_slots)} preguntas.")
 
-        logger.info(f"✅ Examen generado en {(datetime.now() - start_time).seconds}s con {len(valid_questions)} preguntas.")
+        duration = (datetime.now() - start_time).seconds
+        logger.info(f"✅ Examen generado en {duration}s con {len(valid_questions)} preguntas.")
         
         return Exam(
             config=config,
@@ -78,7 +83,7 @@ class ExamGenerator:
             try:
                 return await self._process_slot_logic(slot, config)
             except Exception as e:
-                logger.warning(f"⚠️ Reintento {attempt+1} para Slot {slot.topic_id}: {e}")
+                logger.warning(f"⚠️ Reintento {attempt+1}/{max_retries} para Slot {slot.topic_id}: {e}")
                 if attempt == max_retries:
                     raise e
 
@@ -87,77 +92,94 @@ class ExamGenerator:
         chunks = await self.content_selector.fetch_context_for_slot(
             config.course_id, slot.topic_id
         )
-        rag_context_text = "\n".join([f"- {c.latex_content}" for c in chunks])
+        # Preparamos el contexto RAG como string
+        rag_context_text = "\n".join([f"- {c.latex_content}" for c in chunks]) if chunks else "No context available."
         
-        # B. Estilo
-        pattern = await self.style_selector.select_best_pattern(
-            course_id=config.course_id,
-            domain="engineering",
-            cognitive_needed=slot.cognitive_target,
-            difficulty=slot.difficulty
-        )
-
-        # C. Determinar Tipo
+        # B. Estilo (Opcional por ahora)
+        # pattern = await self.style_selector.select_best_pattern(...) 
+        
+        # C. Determinar Tipo Objetivo
         target_q_type = self._determine_question_type(slot, config)
 
-        # D. Construcción del Prompt (AQUÍ ESTÁ EL CAMBIO LIMPIO)
-        # En vez de tener el texto sucio aquí, llamamos a la "Nueva Casa"
-        prompt = PromptManager.get_engineering_prompt(
+        # D. LLAMADA A LA IA (NUEVA INTEGRACIÓN 4.3)
+        # Usamos el método tipado que creamos en AIService
+        ai_response_wrapper: ReasoningExamResponse = await self.ai_service.generate_exam_question(
             topic=slot.topic_id,
-            difficulty=slot.difficulty,
-            cognitive_type=slot.cognitive_target,
-            points=getattr(slot, 'points', 1.0),
+            difficulty=slot.difficulty.value if isinstance(slot.difficulty, ExamDifficulty) else slot.difficulty,
+            question_type=target_q_type.value, # Pasamos el string ('numeric_input')
             rag_context=rag_context_text,
-            question_type=target_q_type,
-            style_instruction=pattern.reasoning_recipe if pattern else None
+            # kwargs adicionales si el AIService los acepta
+            cognitive_type=slot.cognitive_target.value
         )
 
-        # E. Llamada AI
-        ai_response = await self.ai_service.generate_json(
-            prompt=prompt,
-            model="gpt-4o-2024-08-06",
-            temperature=0.2
-        )
+        # La IA devuelve una lista (aunque pedimos 1). Cogemos la primera.
+        if not ai_response_wrapper.questions:
+            raise ValueError("La IA devolvió una lista de preguntas vacía.")
+            
+        ai_question_obj = ai_response_wrapper.questions[0]
 
-        # F. Mapeo (INTACTO: Tu lógica de validación sigue aquí)
-        return self._map_json_to_domain(ai_response, slot, chunks, target_q_type)
+        # E. Mapeo (NUEVA LÓGICA DE OBJETOS)
+        return self._map_object_to_domain(ai_question_obj, slot, chunks, target_q_type, ai_response_wrapper.chain_of_thought)
 
     def _determine_question_type(self, slot: ExamSlot, config: ExamConfig) -> QuestionType:
-        # Lógica original preservada
         if config.include_code_questions and slot.cognitive_target in [CognitiveType.COMPUTATIONAL, CognitiveType.DEBUGGING]:
-            if "code" in slot.topic_id or "algorithm" in slot.topic_id:
+            # Heurística simple: si el tema suena a código
+            if any(k in slot.topic_id.lower() for k in ["code", "algo", "python", "java", "loop"]):
                 return QuestionType.CODE_EDITOR
+        
         if slot.cognitive_target == CognitiveType.CONCEPTUAL:
             return QuestionType.MULTIPLE_CHOICE
+            
         return QuestionType.NUMERIC_INPUT
 
-    def _map_json_to_domain(self, data: Dict, slot: ExamSlot, chunks: List[EngineeringBlock], q_type: QuestionType) -> GeneratedQuestion:
-        # Tu mapeo original preservado
+    def _map_object_to_domain(self, ai_q: Any, slot: ExamSlot, chunks: List[EngineeringBlock], target_type: QuestionType, cot: str) -> GeneratedQuestion:
+        """
+        Transforma el objeto Pydantic de la IA (NumericQuestionAI, etc.) 
+        a nuestra entidad de Dominio (GeneratedQuestion).
+        """
         validation_rules = None
-        if q_type == QuestionType.NUMERIC_INPUT:
-            validation_rules = NumericalValidation(
-                correct_value=float(data.get("numeric_solution", 0.0)),
-                tolerance_percentage=float(data.get("tolerance_percent", 5.0)),
-                allowed_units=data.get("units", [])
-            )
-        elif q_type == QuestionType.CODE_EDITOR:
-            tcs = [CodeTestCase(input_data=tc["input"], expected_output=tc["output"], is_hidden=tc.get("hidden", False)) 
-                   for tc in data.get("test_cases", [])]
-            validation_rules = CodeValidation(test_cases=tcs)
-        elif q_type == QuestionType.MULTIPLE_CHOICE:
-            validation_rules = MultipleChoiceValidation(
-                options=data.get("options", []),
-                correct_index=int(data.get("correct_option_index", 0))
-            )
 
+        # 1. Validación Numérica
+        if isinstance(ai_q, NumericQuestionAI):
+            validation_rules = NumericalValidation(
+                correct_value=ai_q.numeric_rule.correct_value,
+                tolerance_percentage=ai_q.numeric_rule.tolerance_percentage,
+                allowed_units=ai_q.numeric_rule.allowed_units
+            )
+            final_type = QuestionType.NUMERIC_INPUT
+
+        # 2. Validación Opción Múltiple
+        elif isinstance(ai_q, ChoiceQuestionAI):
+            validation_rules = MultipleChoiceValidation(
+                options=ai_q.choice_rule.options,
+                correct_index=ai_q.choice_rule.correct_index
+            )
+            final_type = QuestionType.MULTIPLE_CHOICE
+
+        # 3. Validación Código
+        elif isinstance(ai_q, CodeQuestionAI):
+            tcs = [
+                CodeTestCase(input_data=inp, expected_output=out) 
+                for inp, out in zip(ai_q.code_rule.test_inputs, ai_q.code_rule.expected_outputs)
+            ]
+            validation_rules = CodeValidation(test_cases=tcs)
+            final_type = QuestionType.CODE_EDITOR
+            
+        # 4. Fallback (Open Text)
+        else:
+            final_type = QuestionType.OPEN_TEXT
+            # Sin reglas de validación automática estricta
+
+        # Construimos la entidad final
         return GeneratedQuestion(
-            statement_latex=data.get("statement_latex", "Error"),
-            code_context=data.get("code_context"),
+            statement_latex=ai_q.statement_latex,
+            # code_context=ai_q.hint, # Opcional si añades campo de código
             cognitive_type=slot.cognitive_target,
             difficulty=slot.difficulty,
-            question_type=q_type,
+            question_type=final_type,
             source_block_id=chunks[0].id if chunks else "unknown",
             validation_rules=validation_rules,
-            step_by_step_solution_latex=data.get("explanation", ""),
-            hint=data.get("hint")
+            step_by_step_solution_latex=ai_q.explanation,
+            hint=ai_q.hint
+            # Podríamos guardar 'cot' (Chain of Thought) en algún log si quisiéramos
         )
