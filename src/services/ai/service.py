@@ -22,7 +22,6 @@ from src.services.learning.domain.entities import (
 )
 
 # --- SCHEMAS (Outputs Estructurados) ---
-# Importamos desde la ruta correcta que creamos (sin 'api')
 from src.services.learning.schemas import ReasoningQuestionResponse
 
 # --- PROMPTS ---
@@ -63,12 +62,10 @@ class AIService:
     ) -> Dict[str, Any]:
         """
         Genera una pregunta de examen validada y estructurada.
+        Retorna un dict con keys: 'chain_of_thought' y 'content'.
         """
         
-        # 1. PREPARACIÓN (Prompt Engineering Interno)
-        # Nota: Si tu ExamGenerator ya construye el prompt fuera, adaptaremos este método luego.
-        # Por ahora, mantenemos la lógica robusta original.
-        
+        # 1. PREPARACIÓN
         system_prompt = PromptManager.get_examiner_system_prompt(language) if hasattr(PromptManager, 'get_examiner_system_prompt') else "Eres un profesor experto."
         
         user_task_prompt = PromptManager.get_engineering_prompt(
@@ -111,20 +108,18 @@ class AIService:
             logger.debug(f"💭 Razonamiento AI: {response_wrapper.chain_of_thought}")
 
             # Convertimos a dict puro usando model_dump() (Pydantic v2)
-            # Esto devuelve {'chain_of_thought': '...', 'content': {'statement_latex': '...', ...}}
-            # IMPORTANTE: Tu ExamGenerator espera recibir solo el contenido interior o el objeto completo?
-            # Basado en tu código anterior, devolvemos el objeto 'content' limpio:
-            
             full_dump = response_wrapper.model_dump()
             
-            # Devolvemos el contenido de la pregunta (NumericContent, ChoiceContent, etc.)
-            return full_dump['content']
+            # --- CORRECCIÓN FINAL ---
+            # Devolvemos TODO el objeto (chain_of_thought + content).
+            # Si devolviéramos solo ['content'], perderíamos el razonamiento.
+            return full_dump 
 
         except Exception as e:
             logger.error(f"❌ Error en AIService: {str(e)}")
             raise e
 
-    # --- MÉTODO COMPATIBILIDAD (SI EXAM_GENERATOR LO PIDE) ---
+    # --- MÉTODO COMPATIBILIDAD ---
     async def generate_json(self, prompt: str, model: str = None, temperature: float = 0.2) -> Dict[str, Any]:
         """
         Método 'passthrough' por si ExamGenerator quiere control total del prompt.
@@ -139,7 +134,8 @@ class AIService:
                 response_format=ReasoningQuestionResponse,
                 temperature=temperature,
             )
-            return completion.choices[0].message.parsed.content.model_dump()
+            # También devolvemos todo aquí por consistencia
+            return completion.choices[0].message.parsed.model_dump()
         except Exception as e:
             logger.error(f"❌ Error en generate_json: {e}")
             raise e

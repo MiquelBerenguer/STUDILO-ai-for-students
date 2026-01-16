@@ -1,55 +1,51 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Literal, Union, Dict, Any
+from typing import List, Literal, Union, Dict, Any
 
 # =============================================================================
-# ESQUEMAS INTERNOS DE INTELIGENCIA ARTIFICIAL (Structured Outputs)
+# ESQUEMAS ROBUSTOS (Literal + Strict Config)
 # =============================================================================
 
-# NOTA DE INGENIERÍA: Usamos strings puros ("raw strings") en los Literals.
-# NO usamos Enums aquí porque Pydantic genera esquemas 'const' que OpenAI rechaza.
-# OpenAI necesita ver 'type: string' y 'enum: [...]'.
+class TestCase(BaseModel):
+    input_data: str = Field(..., description="Entrada del test")
+    expected_output: str = Field(..., description="Salida esperada")
+    is_hidden: bool = Field(..., description="Si es un test oculto")
 
 class NumericContent(BaseModel):
-    # CORRECCIÓN CRÍTICA: String literal directo sin Enum
-    kind: Literal["numeric_input"]
+    # USAMOS LITERAL: Seguridad total. Solo acepta esta cadena exacta.
+    kind: Literal["numeric_input"] = Field("numeric_input", description="Tipo fijo")
     
-    statement_latex: str = Field(..., description="Enunciado del problema en LaTeX")
+    statement_latex: str = Field(..., description="Enunciado en LaTeX")
     explanation: str = Field(..., description="Explicación paso a paso")
-    hint: Optional[str] = Field(None, description="Pista breve")
+    hint: Union[str, None] = Field(..., description="Pista breve (o null)")
     
-    # Campos OBLIGATORIOS
-    numeric_solution: float
-    tolerance_percent: float
-    units: List[str]
+    # Datos planos (Ya no están dentro de validation_rules)
+    numeric_solution: float = Field(..., description="Solución numérica exacta")
+    tolerance_percent: float = Field(..., description="Margen de error %")
+    units: List[str] = Field(..., description="Lista de unidades permitidas")
 
 class ChoiceContent(BaseModel):
-    # CORRECCIÓN CRÍTICA: String literal directo sin Enum
-    kind: Literal["multiple_choice"]
+    kind: Literal["multiple_choice"] = Field("multiple_choice", description="Tipo fijo")
     
-    statement_latex: str = Field(..., description="Enunciado del problema en LaTeX")
-    explanation: str = Field(..., description="Explicación de por qué es la correcta")
-    hint: Optional[str] = None
+    statement_latex: str = Field(..., description="Enunciado en LaTeX")
+    explanation: str = Field(..., description="Explicación")
+    hint: Union[str, None] = Field(..., description="Pista breve (o null)")
     
-    # Campos OBLIGATORIOS
     options: List[str] = Field(..., min_items=2, description="Lista de opciones")
-    correct_option_index: int = Field(..., description="Índice 0-based de la correcta")
+    correct_option_index: int = Field(..., description="Índice 0-based")
 
 class CodeContent(BaseModel):
-    # CORRECCIÓN CRÍTICA: String literal directo sin Enum
-    kind: Literal["code_editor"]
+    kind: Literal["code_editor"] = Field("code_editor", description="Tipo fijo")
     
-    statement_latex: str = Field(..., description="Enunciado del problema en LaTeX")
-    explanation: str = Field(..., description="Explicación de la solución")
-    hint: Optional[str] = None
+    statement_latex: str = Field(..., description="Enunciado en LaTeX")
+    explanation: str = Field(..., description="Explicación")
+    hint: Union[str, None] = Field(..., description="Pista breve (o null)")
     
-    # Campos OBLIGATORIOS
-    code_context: str = Field(..., description="Código inicial o firma de la función")
-    test_cases: List[Dict[str, Any]] = Field(..., description="Lista de inputs/outputs para tests")
+    code_context: str = Field(..., description="Código inicial")
+    test_cases: List[TestCase] = Field(..., description="Casos de prueba")
 
-# --- Unión Discriminada ---
-# Pydantic usará el campo 'kind' para saber qué esquema validar
+# Unión simple (Dejamos que Pydantic infiera el tipo por el campo 'kind')
 QuestionContentVariant = Union[NumericContent, ChoiceContent, CodeContent]
 
 class ReasoningQuestionResponse(BaseModel):
-    chain_of_thought: str = Field(..., description="Razonamiento interno previo. ÚSALO para calcular y validar antes de responder.")
+    chain_of_thought: str = Field(..., description="Razonamiento interno previo.")
     content: QuestionContentVariant

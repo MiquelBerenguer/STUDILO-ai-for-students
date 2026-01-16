@@ -3,76 +3,63 @@ import logging
 import os
 from dotenv import load_dotenv
 
-# Cargar variables de entorno (.env) para que la IA tenga la API KEY
 load_dotenv()
-
-# Importamos TU servicio real (el que definiste en Task 4.3)
 from src.services.ai.service import AIService
 from src.services.learning.domain.entities import (
-    ExamDifficulty, 
-    QuestionType, 
-    CognitiveType, 
-    Language
+    ExamDifficulty, QuestionType, CognitiveType, Language
 )
 
-# Configurar logs
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("BrainTest")
 
 async def test_the_professor():
-    print("\n🧪 --- INICIANDO TEST DE CEREBRO (AIService REAL) ---")
+    print("\n🧪 --- INICIANDO TEST DE CEREBRO 2.0 (Schema Updated) ---")
     
-    # Verificar API Key
     if not os.getenv("OPENAI_API_KEY"):
-        print("❌ ERROR: No se encontró OPENAI_API_KEY en el entorno.")
+        print("❌ ERROR: Falta OPENAI_API_KEY.")
         return
 
-    # 1. Instanciamos el servicio REAL
-    try:
-        ai_service = AIService() # Usará la config automática
-        print("✅ Servicio IA instanciado.")
-    except Exception as e:
-        print(f"❌ Error instanciando servicio: {e}")
-        return
+    ai_service = AIService()
 
-    # 2. Contexto Dummy (Simulando lo que vendría del PDF)
-    dummy_rag_context = """
-    PRINCIPIO DE ARQUIMEDES:
-    Todo cuerpo sumergido total o parcialmente en un fluido en reposo experimenta 
-    un empuje vertical hacia arriba igual al peso del fluido desalojado.
-    Fórmula: E = Pe * V = pf * g * V
-    Donde pf es la densidad del fluido, V el volumen desplazado y g la gravedad (9.8 m/s2).
-    """
-
-    print("\n🧠 Enviando solicitud a OpenAI (puede tardar 5-10s)...")
-    
+    print("🧠 Enviando solicitud a OpenAI...")
     try:
-        # 3. Llamada al servicio
-        result = await ai_service.generate_exam_question(
+        # Nota: El servicio ahora devuelve el objeto COMPLETO (chain_of_thought + content)
+        result_full = await ai_service.generate_exam_question(
             topic="Hidrostática",
             difficulty=ExamDifficulty.APPLIED,
             question_type=QuestionType.NUMERIC_INPUT,
             cognitive_type=CognitiveType.COMPUTATIONAL,
-            rag_context=dummy_rag_context,
+            rag_context="Principio de Arquímedes...",
             language=Language.ES
         )
 
-        # 4. Validación Visual
-        print("\n✅ ¡RESPUESTA RECIBIDA!")
+        print("\n✅ ¡RESPUESTA RECIBIDA Y VALIDADA!")
         print("=" * 60)
-        print(f"📝 Enunciado LaTeX: {result.get('statement_latex')[:100]}...")
-        print(f"💭 Razonamiento: {result.get('chain_of_thought')}")
         
-        rules = result.get('validation_rules', {})
-        if rules:
-            print(f"🎯 Solución: {rules.get('correct_value')} (Tol: {rules.get('tolerance_percentage')}%)")
-        else:
-            print("⚠️ OJO: No llegaron validation_rules")
+        # 1. Verificamos el Razonamiento
+        cot = result_full.get('chain_of_thought', 'N/A')
+        print(f"💭 Razonamiento IA:\n{cot[:150]}...\n")
+        
+        # 2. Accedemos al contenido real
+        content = result_full.get('content', {})
+        
+        print(f"📝 Enunciado: {content.get('statement_latex')[:100]}...")
+        print(f"🔑 Tipo detectado: {content.get('kind')}")
+
+        # 3. Verificación de Datos Numéricos (Schema Plano)
+        if content.get('kind') == 'numeric_input':
+            sol = content.get('numeric_solution')
+            tol = content.get('tolerance_percent')
+            print(f"🎯 Solución Numérica: {sol} (Tol: {tol}%)")
             
+            if sol is not None:
+                print("✅ Validación: Los datos numéricos llegaron correctamente.")
+            else:
+                print("⚠️ ALERTA: Llegó el tipo correcto pero falta el valor.")
+        
         print("=" * 60)
 
     except Exception as e:
-        print(f"\n❌ FALLO EN LA GENERACIÓN: {str(e)}")
+        print(f"\n❌ FALLO: {str(e)}")
 
 if __name__ == "__main__":
     asyncio.run(test_the_professor())
