@@ -1,8 +1,8 @@
-from typing import Optional
+from typing import Optional, Union, Any
 from src.services.learning.domain.entities import (
     ExamDifficulty, 
     QuestionType, 
-    CognitiveType,
+    CognitiveType, 
     Language
 )
 
@@ -10,10 +10,21 @@ class PromptManager:
     """
     CEREBRO CENTRALIZADO DE PROMPTS (HYBRID VERSION).
     Combina:
-    - Calidad Pedagógica (Tu aporte)
-    - Seguridad de Estructura (Mi aporte)
+    - Calidad Pedagógica
+    - Seguridad de Estructura
     - Personalidad Multi-agente (Examiner + Tutor)
     """
+
+    @staticmethod
+    def _safe_val(item: Any) -> str:
+        """
+        🛡️ HELPER DE ROBUSTEZ:
+        Extrae el valor string de un Enum o devuelve el string tal cual.
+        Evita el error 'str object has no attribute value'.
+        """
+        if hasattr(item, 'value'):
+            return str(item.value)
+        return str(item)
 
     @staticmethod
     def _get_base_identity() -> str:
@@ -27,22 +38,27 @@ class PromptManager:
     # =========================================================================
     
     @staticmethod
-    def _get_content_guidelines(q_type: QuestionType) -> str:
+    def _get_content_guidelines(q_type: Union[QuestionType, str]) -> str:
         """
-        Define la CALIDAD del contenido (Tu lógica pedagógica).
+        Define la CALIDAD del contenido basada en el tipo de pregunta.
         """
-        if q_type == QuestionType.NUMERIC_INPUT:
+        q_val = PromptManager._safe_val(q_type)
+        numeric_val = PromptManager._safe_val(QuestionType.NUMERIC_INPUT)
+        code_val = PromptManager._safe_val(QuestionType.CODE_EDITOR)
+        choice_val = PromptManager._safe_val(QuestionType.MULTIPLE_CHOICE)
+        
+        if q_val == numeric_val:
             return (
                 "- NUMÉRICO: El problema debe tener solución única. "
                 "Calcula la solución paso a paso internamente. "
                 "Define tolerancia (2-5%) y unidades SI."
             )
-        elif q_type == QuestionType.CODE_EDITOR:
+        elif q_val == code_val:
             return (
                 "- CÓDIGO: Proporciona firma de función clara. "
                 "Los tests deben cubrir casos borde (nulls, ceros, negativos)."
             )
-        elif q_type == QuestionType.MULTIPLE_CHOICE:
+        elif q_val == choice_val:
             return (
                 "- TEST: Solo 1 correcta. "
                 "Los distractores deben basarse en errores conceptuales comunes, no ser aleatorios."
@@ -50,18 +66,21 @@ class PromptManager:
         return ""
 
     @staticmethod
-    def _get_structure_hint(q_type: QuestionType) -> str:
+    def _get_structure_hint(q_type: Union[QuestionType, str]) -> str:
         """
-        RECORDATORIO TÉCNICO (Cinturón de seguridad).
-        Ayuda a la IA a mapear los campos específicos de nuestras entidades Pydantic.
+        RECORDATORIO TÉCNICO (Cinturón de seguridad para JSON).
         """
         base = "Campos requeridos: statement_latex, explanation, hint."
+        q_val = PromptManager._safe_val(q_type)
+        numeric_val = PromptManager._safe_val(QuestionType.NUMERIC_INPUT)
+        code_val = PromptManager._safe_val(QuestionType.CODE_EDITOR)
+        choice_val = PromptManager._safe_val(QuestionType.MULTIPLE_CHOICE)
         
-        if q_type == QuestionType.NUMERIC_INPUT:
+        if q_val == numeric_val:
             return f"{base} Específicos: 'numeric_solution', 'tolerance_percent', 'units'."
-        elif q_type == QuestionType.CODE_EDITOR:
+        elif q_val == code_val:
             return f"{base} Específicos: 'code_context', 'test_cases' (input/output/hidden)."
-        elif q_type == QuestionType.MULTIPLE_CHOICE:
+        elif q_val == choice_val:
             return f"{base} Específicos: 'options', 'correct_option_index' (0-based)."
         
         return base
@@ -69,11 +88,11 @@ class PromptManager:
     @staticmethod
     def get_engineering_prompt(
         topic: str,
-        difficulty: ExamDifficulty,
-        cognitive_type: CognitiveType,
+        difficulty: Union[ExamDifficulty, str],  # ⭐ Type hint explícito
+        cognitive_type: Union[CognitiveType, str],
         points: float,
         rag_context: str,
-        question_type: QuestionType,
+        question_type: Union[QuestionType, str],
         style_instruction: Optional[str] = None
     ) -> str:
         
@@ -82,6 +101,11 @@ class PromptManager:
         # 2. Estructura (Mi aporte reducido para ahorrar tokens)
         structure_hint = PromptManager._get_structure_hint(question_type)
         
+        # 3. ⭐ Extracción segura de valores (Tu enfoque: variables separadas)
+        diff_str = PromptManager._safe_val(difficulty).upper()
+        type_str = PromptManager._safe_val(question_type).upper()
+        cog_str = PromptManager._safe_val(cognitive_type).upper()
+        
         return f"""
         {PromptManager._get_base_identity()}
         
@@ -89,9 +113,9 @@ class PromptManager:
         
         METADATOS:
         - TEMA: {topic}
-        - DIFICULTAD: {difficulty.value.upper()} (Valor: {points} pts)
-        - TIPO: {question_type.value.upper()}
-        - COGNICIÓN: {cognitive_type.value.upper()}
+        - DIFICULTAD: {diff_str} (Valor: {points} pts)
+        - TIPO: {type_str}
+        - COGNICIÓN: {cog_str}
         
         FUENTE DE VERDAD (RAG):
         \"\"\"
@@ -122,8 +146,11 @@ class PromptManager:
     # =========================================================================
 
     @staticmethod
-    def get_tutor_system_prompt(language: Language) -> str:
-        lang_instr = "Habla en Español." if language == Language.ES else "Speak in English."
+    def get_tutor_system_prompt(language: Union[Language, str]) -> str:
+        """Genera el system prompt para el chatbot tutor"""
+        lang_val = PromptManager._safe_val(language)
+        es_val = PromptManager._safe_val(Language.ES)
+        lang_instr = "Habla en Español." if lang_val == es_val else "Speak in English."
         
         return f"""
         IDENTITY: Mentor Ingeniero Senior.

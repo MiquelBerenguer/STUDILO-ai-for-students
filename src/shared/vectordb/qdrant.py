@@ -1,23 +1,21 @@
 import os
 import logging
 from typing import List, Dict, Any, Optional
+
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models
 from openai import AsyncOpenAI
 
 # --- IMPORTS DE DOMINIO ---
-# Necesarios para devolver objetos que el sistema entienda
 try:
     from src.services.learning.domain.entities import EngineeringBlock, SourceType
 except ImportError:
-    # Fallback por si se usa desde un script suelto
     pass
 
-# --- IMPORTS RELATIVOS (Tu estructura original) ---
+# --- IMPORTS RELATIVOS ---
 try:
     from .client import VectorDBClient, VectorChunk
 except ImportError:
-    # Definición dummy si falla el import relativo, para que no rompa
     class VectorChunk:
         def __init__(self, id, text, metadata=None, score=0.0):
             self.id = id
@@ -53,7 +51,7 @@ class QdrantService(VectorDBClient):
         await self.client.create_collection(
             collection_name=self.collection_name,
             vectors_config=models.VectorParams(
-                size=1536, # Tamaño de text-embedding-3-small
+                size=1536,
                 distance=models.Distance.COSINE
             )
         )
@@ -68,11 +66,9 @@ class QdrantService(VectorDBClient):
         return [data.embedding for data in response.data]
 
     async def upsert_chunks(self, chunks: List[VectorChunk]):
-        """
-        Guarda chunks en la DB. Usado por el Processor (Ingesta).
-        Mantenemos tu código original aquí.
-        """
-        if not chunks: return
+        """Guarda chunks en la DB. Usado por el Processor (Ingesta)."""
+        if not chunks:
+            return
 
         texts = [chunk.text for chunk in chunks]
         try:
@@ -86,11 +82,10 @@ class QdrantService(VectorDBClient):
             points.append(models.PointStruct(
                 id=chunk.id,
                 vector=vectors[i],
-                # Guardamos todo el metadata para poder recuperarlo luego
                 payload={"text": chunk.text, **chunk.metadata}
             ))
 
-        await self.ensure_collection() # Asegurar que existe antes de escribir
+        await self.ensure_collection()
         await self.client.upsert(collection_name=self.collection_name, points=points)
         logger.info(f"💾 Insertados {len(points)} vectores en Qdrant.")
 
@@ -131,16 +126,28 @@ class QdrantService(VectorDBClient):
             raise e
 
         # 4. Mapeo a Objetos de Dominio (Adapter Pattern)
-        # Convertimos el JSON crudo de Qdrant en el objeto EngineeringBlock que espera el resto de la app
         results = []
         for hit in hits:
             payload = hit.payload or {}
             
-            # Construimos el bloque con seguridad (usando defaults si faltan campos)
+            # ========== CONVERSIÓN SEGURA DE STRING A ENUM ==========
+            source_type_str = payload.get("source_type", "theory_slides")
+            source_type = SourceType.THEORY_SLIDES  # Default seguro
+            
+            # Intentamos convertir el string a Enum
+            try:
+                for st in SourceType:
+                    if st.value == source_type_str:
+                        source_type = st
+                        break
+            except Exception as e:
+                logger.debug(f"⚠️ source_type '{source_type_str}' no reconocido, usando default: {e}")
+            
+            # Construimos el bloque con seguridad
             block = EngineeringBlock(
                 id=str(hit.id),
                 course_id=payload.get("course_id", filters.get("course_id", "unknown") if filters else "unknown"),
-                source_type=SourceType(payload.get("source_type", "theory_slides")),
+                source_type=source_type,  # ✅ Ya es Enum convertido de forma segura
                 
                 # Qdrant guarda el texto en 'text', pero EngineeringBlock usa 'clean_text'
                 clean_text=payload.get("text", ""), 

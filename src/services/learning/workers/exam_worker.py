@@ -93,6 +93,7 @@ class ExamGenerationWorker:
         self.renderer = PDFRenderer()
 
     async def process_job(self, message: aio_pika.IncomingMessage):
+        # CORRECCIÓN DE INDENTACIÓN AQUÍ
         async with message.process():
             try:
                 data = json.loads(message.body)
@@ -102,20 +103,50 @@ class ExamGenerationWorker:
                 
                 logger.info(f"⚡ [Task {task_id}] Procesando solicitud para: {course_id}")
 
-                # A. Configuración
-                cog_type_str = data.get('cognitive_type', 'computational')
-                cog_type = CognitiveType.COMPUTATIONAL
-                if cog_type_str == 'conceptual': cog_type = CognitiveType.CONCEPTUAL
-                elif cog_type_str == 'design': cog_type = CognitiveType.DESIGN_ANALYSIS
+                # ========== CONVERSIÓN SEGURA DE ENUMS ==========
                 
+                # A. Dificultad
+                difficulty_str = data.get('difficulty', 'applied')
+                target_difficulty = ExamDifficulty.APPLIED  # Default
+                try:
+                    # Intenta convertir el string a Enum
+                    for diff in ExamDifficulty:
+                        if diff.value == difficulty_str:
+                            target_difficulty = diff
+                            break
+                except Exception as e:
+                    logger.warning(f"⚠️ Dificultad inválida '{difficulty_str}', usando APPLIED: {e}")
+
+                # B. Tipo Cognitivo
+                cog_type_str = data.get('cognitive_type', 'computational')
+                cognitive_type = CognitiveType.COMPUTATIONAL  # Default
+                try:
+                    if cog_type_str == 'conceptual':
+                        cognitive_type = CognitiveType.CONCEPTUAL
+                    elif cog_type_str == 'design':
+                        cognitive_type = CognitiveType.DESIGN_ANALYSIS
+                    elif cog_type_str == 'debugging':
+                        cognitive_type = CognitiveType.DEBUGGING
+                except Exception as e:
+                    logger.warning(f"⚠️ Tipo cognitivo inválido '{cog_type_str}', usando COMPUTATIONAL: {e}")
+
+                # C. Patrón Pedagógico
+                pattern_str = data.get('pattern', 'adaptive')
+                pattern = PedagogicalPattern.ADAPTIVE  # Default
+                try:
+                    if pattern_str == 'spiral':
+                        pattern = PedagogicalPattern.SPIRAL
+                    elif pattern_str == 'scaffolding':
+                        pattern = PedagogicalPattern.SCAFFOLDING
+                except Exception as e:
+                    logger.warning(f"⚠️ Patrón inválido '{pattern_str}', usando ADAPTIVE: {e}")
+
+                # ========== CREACIÓN DEL CONFIG (CON ENUMS YA CONVERTIDOS) ==========
                 config = ExamConfig(
                     student_id=student_id,
                     course_id=course_id,
-                    target_difficulty=ExamDifficulty(data.get('difficulty', 'applied')),
-                    
-                    # CORRECCIÓN: Usamos un patrón por defecto en lugar de None
-                    pattern=PedagogicalPattern.ADAPTIVE, 
-                    
+                    target_difficulty=target_difficulty,  # ✅ Ya es Enum
+                    pattern=pattern,  # ✅ Ya es Enum
                     num_questions=data.get('num_questions', 5),
                     include_code_questions=data.get('include_code', False),
                     topics_include=data.get('topics', [])
@@ -160,11 +191,10 @@ class ExamGenerationWorker:
         await dlq.bind(dlx, routing_key='failed_task')
 
         # 2. Declaramos la cola principal con los MISMOS argumentos que el Gateway
-        # Esto soluciona el error PRECONDITION_FAILED
         queue_args = {
             'x-dead-letter-exchange': 'dlx',
             'x-dead-letter-routing-key': 'failed_task',
-            'x-message-ttl': 300000  # 5 minutos (Debe coincidir con Gateway)
+            'x-message-ttl': 300000  # 5 minutos
         }
         
         # Declaramos la cola con argumentos

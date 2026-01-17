@@ -21,3 +21,4 @@ asyncpg
 # --- IA DEPENDENCIES ---
 openai>=1.12.0
 tenacity==8.2.3
+qdrant-client==1.10.1

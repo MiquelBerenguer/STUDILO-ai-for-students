@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 import openai
 from openai import AsyncOpenAI
 from tenacity import (
@@ -35,9 +35,14 @@ class AIService:
         """
         Inicializa el servicio de IA.
         """
-        # CORRECCIÓN DE INGENIERÍA: Pydantic v2 guarda los settings en minúscula
         self.client = client or AsyncOpenAI(api_key=settings.openai_api_key)
         self.model = "gpt-4o-mini"
+
+    def _safe_value(self, item: Any) -> str:
+        """Helper para extraer valor de Enum o String de forma segura."""
+        if hasattr(item, 'value'):
+            return str(item.value)
+        return str(item)
 
     @retry(
         stop=stop_after_attempt(3),
@@ -54,9 +59,9 @@ class AIService:
     async def generate_exam_question(
         self,
         topic: str,
-        difficulty: ExamDifficulty,
-        question_type: QuestionType,
-        cognitive_type: CognitiveType,
+        difficulty: Union[ExamDifficulty, str], # Permitimos ambos
+        question_type: Union[QuestionType, str],
+        cognitive_type: Union[CognitiveType, str],
         rag_context: str,
         language: Language = Language.ES
     ) -> Dict[str, Any]:
@@ -65,19 +70,25 @@ class AIService:
         Retorna un dict con keys: 'chain_of_thought' y 'content'.
         """
         
-        # 1. PREPARACIÓN
+        # 1. PREPARACIÓN (Usando helper safe_value)
+        # Esto evita el error 'str object has no attribute value'
+        diff_val = self._safe_value(difficulty)
+        q_type_val = self._safe_value(question_type)
+        cog_val = self._safe_value(cognitive_type)
+
         system_prompt = PromptManager.get_examiner_system_prompt(language) if hasattr(PromptManager, 'get_examiner_system_prompt') else "Eres un profesor experto."
         
+        # Pasamos valores seguros al PromptManager
         user_task_prompt = PromptManager.get_engineering_prompt(
             topic=topic,
-            difficulty=difficulty,
-            cognitive_type=cognitive_type,
+            difficulty=diff_val,
+            cognitive_type=cog_val,
             points=10.0,
             rag_context=rag_context,
-            question_type=question_type
+            question_type=q_type_val
         )
 
-        logger.info(f"🧠 AI Generando: {question_type.value} sobre '{topic}' [Dificultad: {difficulty.value}]")
+        logger.info(f"🧠 AI Generando: {q_type_val} sobre '{topic}' [Dificultad: {diff_val}]")
 
         try:
             # 2. EJECUCIÓN (Native Structured Outputs)
@@ -110,9 +121,7 @@ class AIService:
             # Convertimos a dict puro usando model_dump() (Pydantic v2)
             full_dump = response_wrapper.model_dump()
             
-            # --- CORRECCIÓN FINAL ---
-            # Devolvemos TODO el objeto (chain_of_thought + content).
-            # Si devolviéramos solo ['content'], perderíamos el razonamiento.
+            # Devolvemos TODO el objeto
             return full_dump 
 
         except Exception as e:
@@ -134,7 +143,6 @@ class AIService:
                 response_format=ReasoningQuestionResponse,
                 temperature=temperature,
             )
-            # También devolvemos todo aquí por consistencia
             return completion.choices[0].message.parsed.model_dump()
         except Exception as e:
             logger.error(f"❌ Error en generate_json: {e}")

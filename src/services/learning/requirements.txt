@@ -12,7 +12,7 @@ sqlalchemy==2.0.25
 psycopg2-binary==2.9.9
 asyncpg==0.29.0
 # CRÍTICO: Soluciona el error 'AttributeError: search'
-qdrant-client>=1.9.0
+qdrant-client==1.10.1
 
 # --- MENSAJERÍA (RabbitMQ) ---
 aio-pika==9.4.0
