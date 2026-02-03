@@ -1,35 +1,52 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from typing import List
+from typing import List, Dict, Any
 from uuid import uuid4
 from datetime import datetime
 from sqlalchemy.orm import Session
 
-# --- SCHEMAS ---
+# --- SCHEMAS (Contratos de Datos) ---
+# Fusionamos los schemas antiguos con los nuevos de corrección
 from src.services.learning.api.schemas import (
     CreateExamRequest, ExamResponse,
     StyleRequest, StyleResponse,
     CreatePlanRequest, PlanSessionResponse,
     ChatRequest, ChatResponse,
-    TaskStatusResponse
+    TaskStatusResponse,
+    # Nuevos schemas para el Submit
+    ExamSubmissionRequest, ExamResultResponse
 )
-# --- LÓGICA DE NEGOCIO ---
+
+# --- LÓGICA DE NEGOCIO (Legacy + New) ---
 from src.services.learning.logic.style_selector import StyleSelector
 from src.services.learning.logic.study_planner import GlobalStudyPlanner, ExamInput, UserPreferences
 from src.services.learning.logic.professor_agent import professor_agent 
+
+# --- NUEVOS MOTORES (Grader & AI) ---
+from src.services.ai.service import AIService
+from src.services.learning.logic.grader import GraderEngine
 
 # --- INFRAESTRUCTURA Y SEGURIDAD ---
 from app.core.rabbitmq import mq_client
 from src.shared.database.database import get_db
 from src.shared.database.repositories import PatternRepository
 from src.shared.database.models import User
-
-# CORRECCIÓN DE CONECTIVIDAD: Importamos desde dependencies para evitar ciclos
 from app.dependencies import get_current_user 
 
+# CONFIGURACIÓN
 router = APIRouter()
 executor = ThreadPoolExecutor(max_workers=4)
+
+# =============================================================================
+# 🏭 FACTORIES (Inyección de Dependencias)
+# =============================================================================
+def get_ai_service():
+    return AIService()
+
+def get_grader_engine(ai_service: AIService = Depends(get_ai_service)):
+    # Aquí podríamos inyectar RedisCacheService en el futuro
+    return GraderEngine(ai_service=ai_service, cache_service=None)
 
 # =============================================================================
 # 🧠 1. CHAT DEL MENTOR (EL PROFESOR)
@@ -37,20 +54,14 @@ executor = ThreadPoolExecutor(max_workers=4)
 @router.post("/chat/ask", response_model=ChatResponse)
 async def ask_mentor(
     request: ChatRequest,
-    current_user: User = Depends(get_current_user) # PROTEGIDO
+    current_user: User = Depends(get_current_user)
 ):
-    """
-    Endpoint del Tutor IA.
-    """
+    """Endpoint del Tutor IA."""
     try:
-        # En el futuro pasaremos current_user.full_name al agente para que sea personalizado
         return await professor_agent.ask(request)
     except Exception as e:
         print(f"❌ Error TutorIA: {e}")
-        raise HTTPException(
-            status_code=500, 
-            detail="El Mentor está teniendo problemas técnicos."
-        )
+        raise HTTPException(status_code=500, detail="El Mentor está teniendo problemas técnicos.")
 
 # =============================================================================
 # 🎨 2. SUGERENCIA DE ESTILO
@@ -137,6 +148,7 @@ async def request_exam_generation(
         "user_id": str(current_user.id),
         "student_id": str(request.student_id),
         "course_id": request.course_id,
+        # Manejo robusto de Enum vs String
         "difficulty": request.difficulty if isinstance(request.difficulty, str) else request.difficulty.value,
         "topics": getattr(request, "topics", []),
         "created_at": datetime.utcnow().timestamp()
@@ -166,3 +178,67 @@ async def check_exam_status(
         "status": "PROCESSING",
         "download_url": None
     }
+
+# =============================================================================
+# ✅ 6. CORRECCIÓN DE EXÁMENES (NUEVO - GRADER ENGINE)
+# =============================================================================
+@router.post("/exams/submit", response_model=ExamResultResponse)
+async def submit_exam_attempt(
+    submission: ExamSubmissionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    grader: GraderEngine = Depends(get_grader_engine) # Inyectamos el motor nuevo
+):
+    """
+    Endpoint de Corrección Inteligente (Math + AI).
+    Recibe las respuestas, calcula la nota y devuelve feedback detallado.
+    """
+    # 1. Recuperar la "Verdad" (Preguntas originales con sus soluciones)
+    # Temporalmente usamos un Mock hasta tener la BD poblada en Fase 3
+    original_questions = await _get_exam_questions_mock(submission.exam_id, db)
+    
+    if not original_questions:
+        raise HTTPException(status_code=404, detail="Examen no encontrado o expirado")
+
+    # 2. Ejecutar el Motor de Corrección
+    try:
+        # El Grader devuelve un dict compatible con el schema
+        grading_result = await grader.grade_exam(
+            exam_questions=original_questions,
+            answers=submission.answers
+        )
+        
+        # 3. Mapeo explícito a Schema de Respuesta
+        return ExamResultResponse(
+            exam_id=submission.exam_id,
+            total_score=grading_result["total_score"],
+            xp_earned=grading_result["xp_earned"],
+            details=grading_result["details"],
+            meta=grading_result.get("meta", {})
+        )
+
+    except Exception as e:
+        print(f"❌ Error crítico en Grader: {e}")
+        raise HTTPException(status_code=500, detail="Error interno procesando la corrección.")
+
+# --- HELPER MOCK PARA CORRECCIÓN (Temporal) ---
+async def _get_exam_questions_mock(exam_id, db):
+    from src.services.learning.domain.entities import GeneratedQuestion, QuestionType, NumericalValidation
+    
+    # Simulamos una pregunta de Física para que el test funcione
+    return [
+        GeneratedQuestion(
+            id="q1", 
+            statement_latex="Un coche acelera a 2m/s^2 durante 10s desde el reposo. Calcule la velocidad final.", 
+            cognitive_type="computational", 
+            difficulty="applied",
+            question_type=QuestionType.NUMERIC_INPUT,
+            source_block_id="block_1",
+            step_by_step_solution_latex="v = a * t",
+            validation_rules=NumericalValidation(
+                correct_value=20.0,
+                allowed_units=["m/s"],
+                tolerance_percentage=5.0
+            )
+        )
+    ]

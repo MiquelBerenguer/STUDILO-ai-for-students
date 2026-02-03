@@ -49,3 +49,12 @@ QuestionContentVariant = Union[NumericContent, ChoiceContent, CodeContent]
 class ReasoningQuestionResponse(BaseModel):
     chain_of_thought: str = Field(..., description="Razonamiento interno previo.")
     content: QuestionContentVariant
+
+class AIReasoningEvaluation(BaseModel):
+    chain_of_thought: str = Field(..., description="Análisis interno de la IA sobre el error del alumno.")
+    
+    error_type: Literal['calculation_error', 'conceptual_error', 'unit_error', 'minor_slip', 'correct'] = Field(..., description="Clasificación del error.")
+    
+    adjusted_score_percentage: float = Field(..., description="Puntuación sugerida (0-100) basada en el procedimiento.")
+    
+    feedback_text: str = Field(..., description="Explicación pedagógica para el alumno. Sé amable pero riguroso.")

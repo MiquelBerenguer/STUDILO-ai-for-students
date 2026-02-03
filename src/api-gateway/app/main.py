@@ -20,6 +20,8 @@ from app.core.security import verify_password, get_password_hash
 
 # --- Importaciones de Rutas (Módulos) ---
 from src.services.learning.api.routes import router as learning_router
+from app.routers import documents
+from app.routers import solver
 
 # Configuración de Logging
 logging.basicConfig(level=logging.INFO)
@@ -126,4 +128,19 @@ app.include_router(
     prefix="/api/v1/learning",
     tags=["Learning Core"],
     dependencies=[Depends(get_current_user)] 
+)
+
+app.include_router(
+    documents.router,
+    prefix="/api/v1",  # Quedará como /api/v1/documents/upload
+    # tags=["Documents"]  (Ya está definido dentro del router, no hace falta repetir)
+    # Nota: No pongo Depends(get_current_user) para facilitarte la prueba ahora mismo,
+    # pero en producción deberías descomentarlo para proteger la subida.
+)
+
+app.include_router(
+    solver.router,
+    prefix="/api/v1", # Quedará como /api/v1/solver/ask
+    # tags ya definidos en el router
+    # dependencies=[Depends(get_current_user)] # Ya lo pusimos dentro del router, pero aquí refuerza globalmente si quieres
 )

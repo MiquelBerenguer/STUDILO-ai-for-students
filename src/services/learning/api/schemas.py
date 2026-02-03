@@ -1,61 +1,46 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any, Union, Literal
 from datetime import date
 from src.services.learning.domain.entities import ExamDifficulty, CognitiveType
-from typing import List, Optional, Literal
-from pydantic import BaseModel
 
-# --- INPUTS ---
+# =============================================================================
+# 🟢 1. GENERACIÓN Y PLANIFICACIÓN (LEGACY + MEJORAS)
+# =============================================================================
 
 class CreateExamRequest(BaseModel):
     student_id: str
     course_id: str
     
-    # Mantenemos tu validador inteligente
-    difficulty: str = Field(default="medium") 
+    # SOPORTE HÍBRIDO: Aceptamos string ("facil") o Enum (ExamDifficulty.FUNDAMENTAL)
+    difficulty: Union[str, ExamDifficulty] = Field(default="medium") 
     num_questions: int = Field(default=5, ge=1, le=50)
+    
+    # CRÍTICO: Añadido para que el generador sepa qué temas incluir (Tarea 4.1)
+    topics_include: List[str] = Field(default_factory=list, description="Lista de temas específicos a evaluar")
 
     @field_validator('difficulty')
     def normalize_difficulty(cls, v):
         if isinstance(v, ExamDifficulty):
             return v
-            
-        v_str = str(v).lower().strip()
         
+        v_str = str(v).lower().strip()
         mapping = {
-            # Mapeos a FUNDAMENTAL (Tu equivalente a Easy)
-            "facil": ExamDifficulty.FUNDAMENTAL,
-            "easy": ExamDifficulty.FUNDAMENTAL,
-            "fundamental": ExamDifficulty.FUNDAMENTAL,
-            "beginner": ExamDifficulty.FUNDAMENTAL,
-            
-            # Mapeos a APPLIED (Tu equivalente a Medium)
-            "medio": ExamDifficulty.APPLIED,
-            "medium": ExamDifficulty.APPLIED,
-            "applied": ExamDifficulty.APPLIED,
-            "intermedio": ExamDifficulty.APPLIED,
-            
-            # Mapeos a COMPLEX (Tu equivalente a Hard)
-            "dificil": ExamDifficulty.COMPLEX,
-            "hard": ExamDifficulty.COMPLEX,
-            "complex": ExamDifficulty.COMPLEX,
-            "avanzado": ExamDifficulty.COMPLEX,
-            
-            # Mapeos especiales
+            "facil": ExamDifficulty.FUNDAMENTAL, "easy": ExamDifficulty.FUNDAMENTAL, 
+            "fundamental": ExamDifficulty.FUNDAMENTAL, "beginner": ExamDifficulty.FUNDAMENTAL,
+            "medio": ExamDifficulty.APPLIED, "medium": ExamDifficulty.APPLIED, 
+            "applied": ExamDifficulty.APPLIED, "intermedio": ExamDifficulty.APPLIED,
+            "dificil": ExamDifficulty.COMPLEX, "hard": ExamDifficulty.COMPLEX, 
+            "complex": ExamDifficulty.COMPLEX, "avanzado": ExamDifficulty.COMPLEX,
             "gatekeeper": ExamDifficulty.GATEKEEPER
         }
-        
-        # Fallback seguro: Si no entiende, por defecto APPLIED (Nivel medio)
         return mapping.get(v_str, ExamDifficulty.APPLIED)
 
-# Inputs para el Estilo (Nuevo Endpoint que añadimos antes)
 class StyleRequest(BaseModel):
     course_id: str
     domain: str
     cognitive_type: CognitiveType
     difficulty: ExamDifficulty
 
-# Inputs para el Planner
 class PlanExamInput(BaseModel):
     id: str
     name: str
@@ -66,15 +51,12 @@ class PlanExamInput(BaseModel):
 class CreatePlanRequest(BaseModel):
     student_id: str
     exams: List[PlanExamInput]
-    availability_slots: Dict[str, int] # "2023-10-20": 120
+    availability_slots: Dict[str, int]
     force_include_ids: List[str] = []
-
-# --- OUTPUTS ---
 
 class ExamResponse(BaseModel):
     exam_id: str
     status: str = "generated"
-    # Aquí podríamos devolver el examen completo si quisiéramos
 
 class StyleResponse(BaseModel):
     pattern_id: str
@@ -88,28 +70,70 @@ class PlanSessionResponse(BaseModel):
     duration: int
     focus_score: float
 
-# Estructura de un mensaje individual
+class TaskStatusResponse(BaseModel):
+    task_id: str
+    status: str
+    download_url: Optional[str] = None
+
+# =============================================================================
+# 🔵 2. CHAT DEL TUTOR (LEGACY)
+# =============================================================================
+
 class Message(BaseModel):
     role: Literal["user", "assistant", "system"]
     content: str
 
-# Entrada del Chat
 class ChatRequest(BaseModel):
     message: str
-    # IDs de archivos para RAG (Retrieval Augmented Generation)
     context_files: List[str] = [] 
-    # El cliente mantiene el estado y lo envía cada vez (Stateless Server)
     conversation_history: List[Message] = [] 
     course_context: Optional[str] = None
 
-# Salida del Chat
 class ChatResponse(BaseModel):
     response: str
     methodology_step: str 
     sources: List[str] = []
 
+# =============================================================================
+# 🟠 3. CORRECCIÓN Y FEEDBACK (TAREA 4.6)
+# =============================================================================
 
-class TaskStatusResponse(BaseModel):
-    task_id: str
-    status: str
-    download_url: Optional[str] = None
+class AnswerSubmission(BaseModel):
+    question_id: str = Field(..., description="UUID de la pregunta.")
+    numeric_value: Optional[str] = Field(None, description="Valor numérico puro. Ej: '10.5'")
+    unit: Optional[str] = Field(None, description="Unidad utilizada. Ej: 'm/s'")
+    text_content: Optional[str] = Field(None, description="Procedimiento o razonamiento escrito.")
+    time_spent_seconds: int = Field(0, ge=0, description="Tiempo dedicado en segundos.")
+
+    @field_validator('numeric_value')
+    def sanitize_numeric(cls, v):
+        if v is not None:
+            return v.strip().replace(',', '.')
+        return v
+
+class ExamSubmissionRequest(BaseModel):
+    exam_id: str
+    student_id: str
+    answers: List[AnswerSubmission]
+
+class QuestionFeedbackDetail(BaseModel):
+    question_id: str
+    score: float
+    status: Literal["correct", "incorrect", "partial", "pending"]
+    feedback_text: str
+    correct_solution: Optional[str] = None
+    source: Literal["computed", "ai", "cache", "fallback"] 
+
+class ExamResultResponse(BaseModel):
+    exam_id: str
+    total_score: float
+    xp_earned: int
+    details: List[QuestionFeedbackDetail]
+    meta: Dict[str, Any] = Field(default_factory=dict, description="Métricas de ejecución")
+
+# --- INTERNAL AI SCHEMAS ---
+class AIReasoningEvaluation(BaseModel):
+    chain_of_thought: str = Field(..., description="Razonamiento interno.")
+    error_type: Literal['calculation_error', 'conceptual_error', 'unit_error', 'minor_slip', 'correct']
+    adjusted_score_percentage: float = Field(..., ge=0.0, le=100.0)
+    feedback_text: str

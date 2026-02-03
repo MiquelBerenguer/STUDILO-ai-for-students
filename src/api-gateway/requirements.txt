@@ -2,21 +2,28 @@ fastapi==0.109.0
 uvicorn[standard]==0.27.0
 pydantic==2.6.0
 pydantic-settings==2.1.0
-aio-pika==9.4.0
 python-dotenv==1.0.1
 httpx==0.26.0
-python-multipart
+
+# --- Colas y Mensajería ---
+aio-pika==9.4.0
+
 # --- Database & Migrations ---
 sqlalchemy
 psycopg2-binary
 alembic
+asyncpg
+
 # --- Seguridad y Autenticación ---
 passlib[bcrypt]
 bcrypt==4.0.1
 python-jose[cryptography]
-python-multipart  # Necesario para el login de formulario (OAuth2)
 email-validator
-asyncpg
+# Necesario para subida de archivos (UploadFile) y Login Form
+python-multipart
+
+# --- Almacenamiento (EL QUE FALTABA) ---
+minio>=7.2.0
 
 # --- IA DEPENDENCIES ---
 openai>=1.12.0

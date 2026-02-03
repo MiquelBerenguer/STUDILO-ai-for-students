@@ -22,7 +22,11 @@ from src.services.learning.domain.entities import (
 )
 
 # --- SCHEMAS (Outputs Estructurados) ---
-from src.services.learning.schemas import ReasoningQuestionResponse
+# 🔥 CORRECCIÓN AQUÍ: Añadimos AIReasoningEvaluation a la importación
+from src.services.learning.schemas import (
+    ReasoningQuestionResponse, 
+    AIReasoningEvaluation 
+)
 
 # --- PROMPTS ---
 from src.services.ai.prompts import PromptManager
@@ -44,6 +48,9 @@ class AIService:
             return str(item.value)
         return str(item)
 
+    # -------------------------------------------------------------------------
+    # 1. GENERACIÓN DE EXÁMENES (Lógica antigua, mantenida)
+    # -------------------------------------------------------------------------
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -59,7 +66,7 @@ class AIService:
     async def generate_exam_question(
         self,
         topic: str,
-        difficulty: Union[ExamDifficulty, str], # Permitimos ambos
+        difficulty: Union[ExamDifficulty, str],
         question_type: Union[QuestionType, str],
         cognitive_type: Union[CognitiveType, str],
         rag_context: str,
@@ -67,18 +74,15 @@ class AIService:
     ) -> Dict[str, Any]:
         """
         Genera una pregunta de examen validada y estructurada.
-        Retorna un dict con keys: 'chain_of_thought' y 'content'.
         """
         
-        # 1. PREPARACIÓN (Usando helper safe_value)
-        # Esto evita el error 'str object has no attribute value'
+        # Preparación segura de valores
         diff_val = self._safe_value(difficulty)
         q_type_val = self._safe_value(question_type)
         cog_val = self._safe_value(cognitive_type)
 
         system_prompt = PromptManager.get_examiner_system_prompt(language) if hasattr(PromptManager, 'get_examiner_system_prompt') else "Eres un profesor experto."
         
-        # Pasamos valores seguros al PromptManager
         user_task_prompt = PromptManager.get_engineering_prompt(
             topic=topic,
             difficulty=diff_val,
@@ -91,47 +95,85 @@ class AIService:
         logger.info(f"🧠 AI Generando: {q_type_val} sobre '{topic}' [Dificultad: {diff_val}]")
 
         try:
-            # 2. EJECUCIÓN (Native Structured Outputs)
             completion = await self.client.beta.chat.completions.parse(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_task_prompt}
                 ],
-                # Forzamos el esquema Pydantic nuevo (ReasoningQuestionResponse)
                 response_format=ReasoningQuestionResponse, 
                 temperature=0.2, 
             )
 
-            # 3. OBSERVABILIDAD
             if completion.usage:
-                logger.info(
-                    f"💰 Consumo AI: {completion.usage.total_tokens} tokens "
-                    f"(Prompt: {completion.usage.prompt_tokens}, Compl: {completion.usage.completion_tokens})"
-                )
+                logger.info(f"💰 Consumo AI: {completion.usage.total_tokens} tokens")
 
-            # 4. EXTRACCIÓN Y LIMPIEZA
             response_wrapper = completion.choices[0].message.parsed
             
             if not response_wrapper:
-                raise ValueError("OpenAI devolvió una respuesta vacía o imposible de parsear.")
+                raise ValueError("OpenAI devolvió una respuesta vacía.")
 
             logger.debug(f"💭 Razonamiento AI: {response_wrapper.chain_of_thought}")
 
-            # Convertimos a dict puro usando model_dump() (Pydantic v2)
-            full_dump = response_wrapper.model_dump()
-            
-            # Devolvemos TODO el objeto
-            return full_dump 
+            return response_wrapper.model_dump() 
 
         except Exception as e:
-            logger.error(f"❌ Error en AIService: {str(e)}")
+            logger.error(f"❌ Error en AIService (Examen): {str(e)}")
             raise e
 
-    # --- MÉTODO COMPATIBILIDAD ---
+    # -------------------------------------------------------------------------
+    # 2. MÉTODO GENÉRICO ESTRUCTURADO (Nuevo: Usado por el Solver)
+    # -------------------------------------------------------------------------
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((
+            openai.APIConnectionError, 
+            openai.RateLimitError, 
+            openai.InternalServerError
+        )),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        reraise=True
+    )
+    async def generate_structured_response(
+        self, 
+        system_prompt: str, 
+        user_prompt: str, 
+        response_model: Any, # Clase Pydantic flexible
+        temperature: float = 0.3
+    ) -> Dict[str, Any]:
+        """
+        Método genérico para generar respuestas estructuradas (JSON) usando Pydantic.
+        Se usa para Solver, Feedback y futuros agentes.
+        """
+        try:
+            completion = await self.client.beta.chat.completions.parse(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                response_format=response_model,
+                temperature=temperature,
+            )
+            
+            parsed_obj = completion.choices[0].message.parsed
+            
+            if not parsed_obj:
+                raise ValueError("OpenAI devolvió una respuesta vacía o inválida.")
+                
+            return parsed_obj.model_dump()
+
+        except Exception as e:
+            logger.error(f"❌ Error generando respuesta estructurada: {e}")
+            raise e
+
+    # -------------------------------------------------------------------------
+    # 3. LEGACY / COMPATIBILIDAD
+    # -------------------------------------------------------------------------
     async def generate_json(self, prompt: str, model: str = None, temperature: float = 0.2) -> Dict[str, Any]:
         """
-        Método 'passthrough' por si ExamGenerator quiere control total del prompt.
+        Método 'passthrough' simple.
         """
         try:
             completion = await self.client.beta.chat.completions.parse(
@@ -147,3 +189,22 @@ class AIService:
         except Exception as e:
             logger.error(f"❌ Error en generate_json: {e}")
             raise e
+
+    # -------------------------------------------------------------------------
+    # 4. CORRECCIÓN INTELIGENTE (The Judge)
+    # -------------------------------------------------------------------------
+    async def evaluate_reasoning(self, question_text: str, correct_value: str, student_value: str, student_procedure: str) -> dict:
+        """Evalúa si un alumno merece puntos parciales analizando su texto."""
+        # 1. Construir Prompts
+        sys_prompt = PromptManager.get_grader_system_prompt()
+        user_prompt = PromptManager.build_grader_user_prompt(question_text, correct_value, student_value, student_procedure)
+
+        logger.info(f"⚖️ AI Judging: Evaluando procedimiento para respuesta: {student_value}")
+
+        # 2. Llamada a LLM usando tu método genérico existente
+        return await self.generate_structured_response(
+            system_prompt=sys_prompt,
+            user_prompt=user_prompt,
+            response_model=AIReasoningEvaluation, # AHORA SÍ ESTÁ DEFINIDO ✅
+            temperature=0.2 
+        )

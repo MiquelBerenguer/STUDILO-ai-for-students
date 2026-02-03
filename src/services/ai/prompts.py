@@ -8,20 +8,16 @@ from src.services.learning.domain.entities import (
 
 class PromptManager:
     """
-    CEREBRO CENTRALIZADO DE PROMPTS (HYBRID VERSION).
+    CEREBRO CENTRALIZADO DE PROMPTS (MASTER VERSION).
     Combina:
-    - Calidad Pedagógica
-    - Seguridad de Estructura
-    - Personalidad Multi-agente (Examiner + Tutor)
+    - Pilar 1: Generador (Examiner)
+    - Pilar 2: Tutor (Professor)
+    - Pilar 3: Corrector (Grader)
     """
 
     @staticmethod
     def _safe_val(item: Any) -> str:
-        """
-        🛡️ HELPER DE ROBUSTEZ:
-        Extrae el valor string de un Enum o devuelve el string tal cual.
-        Evita el error 'str object has no attribute value'.
-        """
+        """Helper para extraer valor de Enum o String de forma segura."""
         if hasattr(item, 'value'):
             return str(item.value)
         return str(item)
@@ -39,37 +35,21 @@ class PromptManager:
     
     @staticmethod
     def _get_content_guidelines(q_type: Union[QuestionType, str]) -> str:
-        """
-        Define la CALIDAD del contenido basada en el tipo de pregunta.
-        """
         q_val = PromptManager._safe_val(q_type)
         numeric_val = PromptManager._safe_val(QuestionType.NUMERIC_INPUT)
         code_val = PromptManager._safe_val(QuestionType.CODE_EDITOR)
         choice_val = PromptManager._safe_val(QuestionType.MULTIPLE_CHOICE)
         
         if q_val == numeric_val:
-            return (
-                "- NUMÉRICO: El problema debe tener solución única. "
-                "Calcula la solución paso a paso internamente. "
-                "Define tolerancia (2-5%) y unidades SI."
-            )
+            return "- NUMÉRICO: El problema debe tener solución única. Calcula la solución paso a paso internamente. Define tolerancia (2-5%) y unidades SI."
         elif q_val == code_val:
-            return (
-                "- CÓDIGO: Proporciona firma de función clara. "
-                "Los tests deben cubrir casos borde (nulls, ceros, negativos)."
-            )
+            return "- CÓDIGO: Proporciona firma de función clara. Los tests deben cubrir casos borde (nulls, ceros, negativos)."
         elif q_val == choice_val:
-            return (
-                "- TEST: Solo 1 correcta. "
-                "Los distractores deben basarse en errores conceptuales comunes, no ser aleatorios."
-            )
+            return "- TEST: Solo 1 correcta. Los distractores deben basarse en errores conceptuales comunes."
         return ""
 
     @staticmethod
     def _get_structure_hint(q_type: Union[QuestionType, str]) -> str:
-        """
-        RECORDATORIO TÉCNICO (Cinturón de seguridad para JSON).
-        """
         base = "Campos requeridos: statement_latex, explanation, hint."
         q_val = PromptManager._safe_val(q_type)
         numeric_val = PromptManager._safe_val(QuestionType.NUMERIC_INPUT)
@@ -82,13 +62,12 @@ class PromptManager:
             return f"{base} Específicos: 'code_context', 'test_cases' (input/output/hidden)."
         elif q_val == choice_val:
             return f"{base} Específicos: 'options', 'correct_option_index' (0-based)."
-        
         return base
 
     @staticmethod
     def get_engineering_prompt(
         topic: str,
-        difficulty: Union[ExamDifficulty, str],  # ⭐ Type hint explícito
+        difficulty: Union[ExamDifficulty, str],
         cognitive_type: Union[CognitiveType, str],
         points: float,
         rag_context: str,
@@ -96,12 +75,9 @@ class PromptManager:
         style_instruction: Optional[str] = None
     ) -> str:
         
-        # 1. Calidad (Tu aporte)
         content_guidelines = PromptManager._get_content_guidelines(question_type)
-        # 2. Estructura (Mi aporte reducido para ahorrar tokens)
         structure_hint = PromptManager._get_structure_hint(question_type)
         
-        # 3. ⭐ Extracción segura de valores (Tu enfoque: variables separadas)
         diff_str = PromptManager._safe_val(difficulty).upper()
         type_str = PromptManager._safe_val(question_type).upper()
         cog_str = PromptManager._safe_val(cognitive_type).upper()
@@ -124,10 +100,7 @@ class PromptManager:
         
         INSTRUCCIONES DE RAZONAMIENTO (CHAIN OF THOUGHT):
         1. Tu salida tiene un campo 'chain_of_thought'. ÚSALO PRIMERO.
-        2. Pasos obligatorios en tu razonamiento:
-            - Verificar cobertura del RAG.
-            - Resolver el problema tú mismo.
-            - Justificar distractores.
+        2. Pasos obligatorios: Verificar cobertura del RAG, Resolver tú mismo, Justificar distractores.
         
         DIRECTRICES DE CALIDAD:
         {content_guidelines}
@@ -142,12 +115,11 @@ class PromptManager:
         """
 
     # =========================================================================
-    # PILAR 2: CHATBOT TUTOR (Professor Agent)
+    # PILAR 2: CHATBOT TUTOR (The Professor)
     # =========================================================================
 
     @staticmethod
     def get_tutor_system_prompt(language: Union[Language, str]) -> str:
-        """Genera el system prompt para el chatbot tutor"""
         lang_val = PromptManager._safe_val(language)
         es_val = PromptManager._safe_val(Language.ES)
         lang_instr = "Habla en Español." if lang_val == es_val else "Speak in English."
@@ -175,4 +147,50 @@ class PromptManager:
         
         INSTRUCCIÓN:
         Responde como el Mentor usando el contexto. Si inventas algo fuera del contexto, avisa.
+        """
+
+    # =========================================================================
+    # PILAR 3: EL CORRECTOR (The Judge)
+    # =========================================================================
+    
+    @staticmethod
+    def get_grader_system_prompt() -> str:
+        return """
+        ROL: Eres un Corrector de Exámenes de Ingeniería ("The Grader").
+        TONO: Objetivo, analítico, pero pedagógico.
+
+        TU MISIÓN:
+        Evaluar si un estudiante merece PUNTOS PARCIALES en una pregunta numérica fallida, basándote en su procedimiento escrito.
+
+        MATRIZ DE PUNTUACIÓN (LÓGICA DE NEGOCIO):
+        - A (80-90%): Procedimiento impecable, fórmula correcta, error aritmético simple al final.
+        - B (50-60%): Planteamiento correcto, pero error en conversión de unidades o constantes.
+        - C (20-30%): Intuyó el concepto físico correcto, pero erró en la fórmula base.
+        - D (0%): Razonamiento incoherente, fórmula inventada, o texto vacío.
+
+        SALIDA:
+        Devuelve SOLO un JSON válido conforme al schema solicitado.
+        """
+
+    @staticmethod
+    def build_grader_user_prompt(question_text: str, correct_val: str, student_val: str, student_text: str) -> str:
+        return f"""
+        --- PREGUNTA ---
+        {question_text}
+
+        --- SOLUCIÓN OFICIAL ---
+        {correct_val}
+
+        --- INTENTO DEL ESTUDIANTE ---
+        Valor enviado: {student_val}
+        Procedimiento:
+        \"\"\"
+        {student_text}
+        \"\"\"
+
+        --- TAREA ---
+        1. Analiza el procedimiento.
+        2. Clasifica el error según la Matriz.
+        3. Calcula 'adjusted_score_percentage'.
+        4. Genera feedback constructivo explicando DÓNDE falló.
         """

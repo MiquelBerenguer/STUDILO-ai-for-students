@@ -519,10 +519,14 @@ services:
       - REDIS_SENTINEL_HOST=tutor-ia-redis-sentinel
       - REDIS_SENTINEL_PORT=26379
       - REDIS_MASTER_SET=tutormaster
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - QDRANT_HOST=qdrant      # Asegúrate que coincida con el nombre de tu servicio qdrant en este archivo
+      - QDRANT_PORT=6333
     depends_on:
       - rabbitmq
       - redis-sentinel
-      - postgres-master 
+      - postgres-master
+      - qdrant 
     networks:
       - tutor-ia-network
     volumes:
@@ -634,6 +638,10 @@ services:
       - REDIS_SENTINEL_PORT=26379
       - REDIS_MASTER_SET=tutormaster
       - REDIS_PASSWORD=${REDIS_PASSWORD:REDACTED}
+
+      #Qdrant
+      - QDRANT_HOST=qdrant        # <--- El nombre del servicio en docker-compose
+      - QDRANT_PORT=6333
       
       # MinIO
       - MINIO_ENDPOINT=minio:9000
@@ -653,6 +661,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      qdrant: 
+        condition: service_started
     networks:
       - tutor-ia-network
     restart: unless-stopped

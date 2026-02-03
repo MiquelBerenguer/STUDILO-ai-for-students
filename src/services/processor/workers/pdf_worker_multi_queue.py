@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import uuid
 import asyncio
 import json
 import logging
@@ -129,15 +130,21 @@ class EngineeringWorkerAsync:
                 
                 vector_chunks = []
                 for idx, text in enumerate(text_chunks):
+                    # --- CORRECCIÓN ID QDRANT ---
+                    # Generamos un UUID válido basado en el job_id y el índice
+                    # Usamos uuid5 para que sea determinista (mismo input = mismo ID)
+                    chunk_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{job_id}_{idx}"))
+                    
                     vector_chunks.append(VectorChunk(
-                        id=f"{job_id}_{idx}", 
+                        id=chunk_id,  # <--- Ahora enviamos un UUID real
                         text=text,
                         metadata={
                             "source": data.get('minio_object_key', 'unknown'), 
                             "job_id": job_id,
-                            "filename": data.get("filename", "unknown"),        # <--- ¡AQUÍ ESTABA EL ERROR! (Añadida coma)
-                            "course_id": data.get("course_id", "general"),      # Vital para RAG
-                            "university_id": data.get("university_id", "global"), # Vital para multi-uni
+                            "chunk_index": idx, # Guardamos el índice aquí para saber el orden
+                            "filename": data.get("filename", "unknown"),
+                            "course_id": data.get("course_id", "general"),
+                            "university_id": data.get("university_id", "global"),
                             "doc_type": data.get("doc_type", "notes")
                         }
                     ))
