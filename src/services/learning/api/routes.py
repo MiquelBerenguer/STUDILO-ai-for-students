@@ -1,75 +1,141 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-from typing import List, Dict, Any
+from fastapi.concurrency import run_in_threadpool
+from sqlalchemy.orm import Session
+from typing import List, Optional, Any, Dict
 from uuid import uuid4
 from datetime import datetime
-from sqlalchemy.orm import Session
+import logging
 
 # --- SCHEMAS (Contratos de Datos) ---
-# Fusionamos los schemas antiguos con los nuevos de corrección
 from src.services.learning.api.schemas import (
     CreateExamRequest, ExamResponse,
     StyleRequest, StyleResponse,
     CreatePlanRequest, PlanSessionResponse,
     ChatRequest, ChatResponse,
     TaskStatusResponse,
-    # Nuevos schemas para el Submit
-    ExamSubmissionRequest, ExamResultResponse
+    ExamSubmissionRequest, ExamResultResponse,
+    CourseCreate, CourseResponse # <--- NECESARIO para la nueva funcionalidad
 )
 
-# --- LÓGICA DE NEGOCIO (Legacy + New) ---
+# --- LÓGICA DE NEGOCIO ---
 from src.services.learning.logic.style_selector import StyleSelector
 from src.services.learning.logic.study_planner import GlobalStudyPlanner, ExamInput, UserPreferences
 from src.services.learning.logic.professor_agent import professor_agent 
-
-# --- NUEVOS MOTORES (Grader & AI) ---
 from src.services.ai.service import AIService
 from src.services.learning.logic.grader import GraderEngine
+from src.services.learning.domain.entities import GeneratedQuestion, QuestionType, NumericalValidation
 
-# --- INFRAESTRUCTURA Y SEGURIDAD ---
+# --- INFRAESTRUCTURA ---
 from app.core.rabbitmq import mq_client
 from src.shared.database.database import get_db
 from src.shared.database.repositories import PatternRepository
-from src.shared.database.models import User
+from src.shared.database.models import User, Student, Course
 from app.dependencies import get_current_user 
 
 # CONFIGURACIÓN
 router = APIRouter()
-executor = ThreadPoolExecutor(max_workers=4)
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # 🏭 FACTORIES (Inyección de Dependencias)
 # =============================================================================
-def get_ai_service():
+def get_ai_service() -> AIService:
     return AIService()
 
-def get_grader_engine(ai_service: AIService = Depends(get_ai_service)):
-    # Aquí podríamos inyectar RedisCacheService en el futuro
+def get_grader_engine(ai_service: AIService = Depends(get_ai_service)) -> GraderEngine:
     return GraderEngine(ai_service=ai_service, cache_service=None)
 
+def get_pattern_repo(db: Session = Depends(get_db)) -> PatternRepository:
+    return PatternRepository(db)
+
 # =============================================================================
-# 🧠 1. CHAT DEL MENTOR (EL PROFESOR)
+# 🏛 SERVICE LAYER (Helpers para Cursos y Estudiantes)
 # =============================================================================
-@router.post("/chat/ask", response_model=ChatResponse)
+class CourseService:
+    """Gestiona la creación de perfiles y asignaturas de forma limpia."""
+    
+    @staticmethod
+    def get_or_create_student(db: Session, user: User) -> Student:
+        student = db.query(Student).filter(Student.auth_user_id == user.id).first()
+        if not student:
+            logger.info(f"Creando perfil de estudiante para usuario: {user.email}")
+            student = Student(
+                id=uuid4(),
+                auth_user_id=user.id,
+                email=user.email,
+                university_name="TutorIA University", 
+                degree_name="Ingeniería General"
+            )
+            db.add(student)
+            db.commit()
+            db.refresh(student)
+        return student
+
+    @staticmethod
+    def create_course(db: Session, user: User, course_data: CourseCreate) -> Course:
+        student = CourseService.get_or_create_student(db, user)
+        
+        # Verificar duplicados para evitar errores
+        exists = db.query(Course).filter(
+            Course.student_id == student.id,
+            Course.name == course_data.name
+        ).first()
+        
+        if exists:
+            # Si ya existe, lanzamos error 400 para avisar al frontend
+            raise HTTPException(status_code=400, detail=f"La asignatura '{course_data.name}' ya existe.")
+
+        new_course = Course(
+            id=uuid4(),
+            student_id=student.id,
+            name=course_data.name,
+            domain_field=course_data.domain_field,
+            cognitive_type='procedural',
+            semester=course_data.semester,
+            color_theme=course_data.color_theme
+        )
+        db.add(new_course)
+        db.commit()
+        db.refresh(new_course)
+        return new_course
+
+# =============================================================================
+# 🎓 0. GESTIÓN DE CURSOS (NUEVO - IMPRESCINDIBLE)
+# =============================================================================
+@router.post("/courses", response_model=CourseResponse, status_code=status.HTTP_201_CREATED, tags=["Courses"])
+async def create_course_endpoint(
+    course_in: CourseCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return CourseService.create_course(db, current_user, course_in)
+
+@router.get("/courses", response_model=List[CourseResponse], tags=["Courses"])
+async def list_courses(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    student = CourseService.get_or_create_student(db, current_user)
+    return db.query(Course).filter(Course.student_id == student.id).all()
+
+# =============================================================================
+# 🧠 1. CHAT DEL MENTOR
+# =============================================================================
+@router.post("/chat/ask", response_model=ChatResponse, tags=["Mentoring"])
 async def ask_mentor(
-    request: ChatRequest,
+    request: ChatRequest, 
     current_user: User = Depends(get_current_user)
 ):
-    """Endpoint del Tutor IA."""
     try:
         return await professor_agent.ask(request)
     except Exception as e:
-        print(f"❌ Error TutorIA: {e}")
-        raise HTTPException(status_code=500, detail="El Mentor está teniendo problemas técnicos.")
+        logger.error(f"Mentor Error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="El Mentor está desconectado temporalmente.")
 
 # =============================================================================
 # 🎨 2. SUGERENCIA DE ESTILO
 # =============================================================================
-def get_pattern_repo(db: Session = Depends(get_db)):
-    return PatternRepository(db)
-
-@router.post("/style/suggest", response_model=StyleResponse)
+@router.post("/style/suggest", response_model=StyleResponse, tags=["Exams"])
 async def suggest_exam_style(
     request: StyleRequest,
     repo: PatternRepository = Depends(get_pattern_repo),
@@ -98,16 +164,17 @@ async def suggest_exam_style(
     )
 
 # =============================================================================
-# 📅 3. PLANIFICADOR DE ESTUDIO
+# 📅 3. PLANIFICADOR DE ESTUDIO (OPTIMIZADO)
 # =============================================================================
-@router.post("/plans", response_model=List[PlanSessionResponse])
+@router.post("/plans", response_model=List[PlanSessionResponse], tags=["Planning"])
 async def generate_plan(
-    request: CreatePlanRequest,
+    request: CreatePlanRequest, 
     current_user: User = Depends(get_current_user)
 ):
+    # Mapeo de datos
     logic_exams = [
         ExamInput(id=e.id, name=e.name, exam_date=e.exam_date, 
-                 difficulty_level=e.difficulty_level, topics_count=e.topics_count) 
+                  difficulty_level=e.difficulty_level, topics_count=e.topics_count) 
         for e in request.exams
     ]
     logic_prefs = UserPreferences(
@@ -116,11 +183,10 @@ async def generate_plan(
     )
     
     planner = GlobalStudyPlanner()
-    loop = asyncio.get_event_loop()
     
     try:
-        schedule = await loop.run_in_executor(
-            executor, 
+        # MEJORA: Usamos run_in_threadpool nativo de FastAPI en vez de executor manual
+        schedule = await run_in_threadpool(
             planner.generate_schedule, 
             logic_exams, 
             logic_prefs
@@ -131,12 +197,13 @@ async def generate_plan(
             for s in schedule
         ]
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error generando plan: {str(e)}")
+        logger.error(f"Planner Error: {e}")
+        raise HTTPException(status_code=400, detail="No se pudo generar el plan.")
 
 # =============================================================================
-# 📝 4. GENERADOR DE EXÁMENES (RabbitMQ Asíncrono)
+# 📝 4. GENERADOR DE EXÁMENES (RabbitMQ)
 # =============================================================================
-@router.post("/exams/generate", status_code=202)
+@router.post("/exams/generate", status_code=202, tags=["Exams"])
 async def request_exam_generation(
     request: CreateExamRequest,
     current_user: User = Depends(get_current_user)
@@ -146,18 +213,20 @@ async def request_exam_generation(
     job_payload = {
         "task_id": task_id,
         "user_id": str(current_user.id),
-        "student_id": str(request.student_id),
-        "course_id": request.course_id,
-        # Manejo robusto de Enum vs String
-        "difficulty": request.difficulty if isinstance(request.difficulty, str) else request.difficulty.value,
-        "topics": getattr(request, "topics", []),
+        "student_id": str(request.student_id) if request.student_id else None,
+        "course_id": str(request.course_id) if request.course_id else None,
+        # Seguridad extra para Enums
+        "difficulty": request.difficulty.value if hasattr(request.difficulty, 'value') else request.difficulty,
+        "topic": getattr(request, "topic", "General"),
+        "document_id": str(request.document_id) if request.document_id else None,
         "created_at": datetime.utcnow().timestamp()
     }
     
     success = await mq_client.send_message(job_payload)
     
     if not success:
-        raise HTTPException(status_code=503, detail="Sistema de colas no disponible")
+        logger.critical("RabbitMQ is down!")
+        raise HTTPException(status_code=503, detail="El servicio de generación está saturado.")
     
     return {
         "message": "El Profesor está redactando tu examen.",
@@ -168,9 +237,9 @@ async def request_exam_generation(
 # =============================================================================
 # 🔍 5. POLLING DE ESTADO
 # =============================================================================
-@router.get("/exams/status/{task_id}", response_model=TaskStatusResponse)
+@router.get("/exams/status/{task_id}", response_model=TaskStatusResponse, tags=["Exams"])
 async def check_exam_status(
-    task_id: str,
+    task_id: str, 
     current_user: User = Depends(get_current_user)
 ):
     return {
@@ -180,35 +249,30 @@ async def check_exam_status(
     }
 
 # =============================================================================
-# ✅ 6. CORRECCIÓN DE EXÁMENES (NUEVO - GRADER ENGINE)
+# ✅ 6. CORRECCIÓN INTELIGENTE
 # =============================================================================
-@router.post("/exams/submit", response_model=ExamResultResponse)
+@router.post("/exams/submit", response_model=ExamResultResponse, tags=["Exams"])
 async def submit_exam_attempt(
     submission: ExamSubmissionRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    grader: GraderEngine = Depends(get_grader_engine) # Inyectamos el motor nuevo
+    grader: GraderEngine = Depends(get_grader_engine)
 ):
-    """
-    Endpoint de Corrección Inteligente (Math + AI).
-    Recibe las respuestas, calcula la nota y devuelve feedback detallado.
-    """
-    # 1. Recuperar la "Verdad" (Preguntas originales con sus soluciones)
-    # Temporalmente usamos un Mock hasta tener la BD poblada en Fase 3
-    original_questions = await _get_exam_questions_mock(submission.exam_id, db)
+    """Calcula nota, XP y feedback detallado usando GraderEngine."""
+    
+    # 1. Recuperar la "Verdad" (Mock temporal)
+    original_questions = await _fetch_questions_source(submission.exam_id, db)
     
     if not original_questions:
-        raise HTTPException(status_code=404, detail="Examen no encontrado o expirado")
+        raise HTTPException(status_code=404, detail="Examen no encontrado.")
 
-    # 2. Ejecutar el Motor de Corrección
+    # 2. Ejecutar Corrección
     try:
-        # El Grader devuelve un dict compatible con el schema
         grading_result = await grader.grade_exam(
             exam_questions=original_questions,
             answers=submission.answers
         )
         
-        # 3. Mapeo explícito a Schema de Respuesta
         return ExamResultResponse(
             exam_id=submission.exam_id,
             total_score=grading_result["total_score"],
@@ -218,18 +282,15 @@ async def submit_exam_attempt(
         )
 
     except Exception as e:
-        print(f"❌ Error crítico en Grader: {e}")
-        raise HTTPException(status_code=500, detail="Error interno procesando la corrección.")
+        logger.error(f"Grader Crash: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno durante la corrección.")
 
-# --- HELPER MOCK PARA CORRECCIÓN (Temporal) ---
-async def _get_exam_questions_mock(exam_id, db):
-    from src.services.learning.domain.entities import GeneratedQuestion, QuestionType, NumericalValidation
-    
-    # Simulamos una pregunta de Física para que el test funcione
+# --- HELPER MOCK (Para mantener funcionalidad sin DB completa aún) ---
+async def _fetch_questions_source(exam_id, db) -> List[GeneratedQuestion]:
     return [
         GeneratedQuestion(
             id="q1", 
-            statement_latex="Un coche acelera a 2m/s^2 durante 10s desde el reposo. Calcule la velocidad final.", 
+            statement_latex="Un coche acelera a 2m/s^2 durante 10s desde reposo. Calcule vf.", 
             cognitive_type="computational", 
             difficulty="applied",
             question_type=QuestionType.NUMERIC_INPUT,
