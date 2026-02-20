@@ -1,41 +1,55 @@
-﻿# Tutor IA Platform
+﻿🧠🚀 STUDILO Backend
+From Aerospace Engineering frustration to a high-performance AI Tutor.
 
-Sistema de tutoría inteligente con procesamiento de documentos y análisis educativo.
+📖 The "Why"
+Born from the lack of practice tools for Aerospace Mechanics, STUDILO isn't just another chatbot. It is a backend engine designed to actively challenge students. It generates dynamic study plans and progressive exams based strictly on user-provided notes, eliminating AI hallucinations through rigorous RAG (Retrieval-Augmented Generation).
++3
 
-## 🚀 Inicio Rápido
+🏗️ System Design & Architecture
+Built with enterprise-grade scalability and reliability as the foundation.
++1
 
-1. **Clonar el repositorio**
-   ```bash
-   git clone <repository-url>
-   cd tutor-ia-backend
+1. Scalability & State
 
-Configurar variables de entorno
-bashcp .env.example .env
-# Editar .env con tus valores
-
-Levantar los servicios
-bashmake up
-
-Verificar que todo está funcionando
-bashmake ps
+Stateless Architecture: The API layer holds no state; sessions are managed via JWT and external Redis clusters to allow for infinite horizontal scaling.
++2
 
 
-📋 Servicios
-ServicioPuertoDescripciónAPI Gateway8080Punto de entrada principalAuth Service8081Autenticación y autorizaciónProcessor Service8082Procesamiento de documentosAI Service8083Integración con LLMsAnalytics Service8084Análisis y métricasPostgreSQL5432Base de datos principalRedis6379Cache y sesionesRabbitMQ5672/15672Cola de mensajesMinIO9000/9001Almacenamiento S3Prometheus9090MétricasGrafana3000Dashboards
-🛠 Comandos Útiles
-bash# Ver logs de todos los servicios
-make logs
+Load Balancing: Implements distribution algorithms (Round Robin/Least Connections) to handle traffic efficiently across instances.
++1
 
-# Ver logs de un servicio específico
-docker-compose logs -f auth-service
+2. Reliability & Decoupling
 
-# Reiniciar un servicio
-docker-compose restart auth-service
+Async Processing: Heavy tasks (OCR, PDF Chunking) are decoupled from the main gateway using RabbitMQ. This prevents bottlenecks during peak traffic.
++2
 
-# Limpiar todo (⚠️ borra datos)
-make clean
-📚 Documentación
+No SPOF: Every component is redundant. We use PostgreSQL with read replicas and automated failover to ensure the system never stays down.
++1
 
-Arquitectura
-API Reference
-Runbooks
+3. Technical Rigor (RAG)
+
+Vector Precision: Uses Qdrant for semantic search, ensuring the AI only answers based on the context of your uploaded files.
++1
+
+
+Performance: Multi-level caching (CDN, Application, Database) ensures sub-second response times.
++1
+
+💻 Tech Stack
+
+API: FastAPI (Python).
+
+Storage: PostgreSQL (HA) + MinIO (S3-Compatible).
+
+Cache & Queue: Redis Cluster + RabbitMQ.
+
+
+Observability: Prometheus, Grafana, and ELK Stack.
++1
+
+🚀 Quick Start
+Clone: git clone https://github.com/MiquelBerenguer/STUDILO.git
+
+Config: cp .env.example .env (Add your OpenAI/Google keys).
+
+Deploy: docker-compose up -d
