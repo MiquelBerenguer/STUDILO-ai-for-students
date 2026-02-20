@@ -1,4 +1,4 @@
-﻿🧠🚀 STUDILO Backend
+🧠🚀 STUDILO Backend
 From Aerospace Engineering frustration to a high-performance AI Tutor.
 
 📖 The "Why"
@@ -46,6 +46,13 @@ Cache & Queue: Redis Cluster + RabbitMQ.
 
 Observability: Prometheus, Grafana, and ELK Stack.
 +1
+
+🚀 Quick Start
+Clone: git clone https://github.com/MiquelBerenguer/STUDILO.git
+
+Config: cp .env.example .env (Add your OpenAI/Google keys).
+
+Deploy: docker-compose up -d
 
 🚀 Quick Start
 Clone: git clone https://github.com/MiquelBerenguer/STUDILO.git
