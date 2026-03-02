@@ -701,6 +701,27 @@ services:
       - tutor-ia-network
     restart: always
 
+  # ==============================================
+  # FRONTEND
+  # ==============================================
+  frontend:
+    build:
+      context: ../tutor-ia-frontend
+      dockerfile: Dockerfile
+    container_name: tutor-ia-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../tutor-ia-frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NODE_ENV=development
+    networks:
+      - tutor-ia-network
+    depends_on:
+      - api-gateway
+
 networks:
   tutor-ia-network:
     driver: bridge
