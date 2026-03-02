@@ -52,7 +52,7 @@ jobs:
       - name: 🚀 Validar Dockerfiles de Microservicios
         run: |
           echo "🏗️ Validando Dockerfile de API Gateway..."
-          docker build -t gateway-test -f src/api-gateway/Dockerfile . --dry-run
+          docker build -t gateway-test -f src/api-gateway/Dockerfile .
           echo "✅ Sintaxis de Dockerfiles correcta"
 
   # Job 3: Status Report
