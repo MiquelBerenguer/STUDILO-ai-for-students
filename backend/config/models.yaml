@@ -1,0 +1,30 @@
+# Studilo model configuration. Committed; contains NO secrets (keys live in .env).
+# Swap a model by editing one line. The backend reloads this file automatically.
+# Providers: anthropic | openai | deepseek | google | openrouter | ollama | local | fastembed
+# Fallbacks are tried in order, written as provider/model.
+tasks:
+  # Closed-choice (JEV) questions: bool / enum outputs only. Cheapest model.
+  jev_classification: { provider: google, model: gemini-3.1-flash-lite, fallback: [openai/gpt-5.6-luna] }
+  # Handwriting / equations / diagrams -> Markdown + LaTeX. Cheapest vision-capable model.
+  vision_transcribe: { provider: google, model: gemini-3.1-flash-lite, fallback: [google/gemini-3.5-flash] }
+  notes_structuring: { provider: google, model: gemini-3.5-flash, fallback: [openai/gpt-5.6-luna] }
+  course_memory: { provider: google, model: gemini-3.5-flash, fallback: [openai/gpt-5.6-luna] }
+  exam_generation: { provider: openai, model: gpt-5.6-terra, fallback: [google/gemini-3.5-flash] }
+  exam_verification: { provider: google, model: gemini-3.5-flash, fallback: [openai/gpt-5.6-luna] }
+  # Local embeddings, no key. `local/hashing-384` is the deterministic offline fallback.
+  embeddings: { provider: fastembed, model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2, fallback: [local/hashing-384] }
+
+  # Examples (copy into the lines above):
+  #   notes_structuring: { provider: anthropic, model: claude-sonnet-5 }
+  #   exam_generation:   { provider: anthropic, model: claude-opus-5 }
+  #   jev_classification: { provider: deepseek, model: deepseek-chat, fallback: [ollama/qwen3:4b] }
+
+pricing: # USD per 1M tokens (checked 2026-09-24), used by the cost logger
+  gemini-3.1-flash-lite: { input: 0.25, output: 1.50 }
+  gemini-3.5-flash: { input: 1.50, output: 9.00 }
+  gpt-5.6-luna: { input: 0.20, output: 1.20 }
+  gpt-5.6-terra: { input: 2.00, output: 12.00 }
+  claude-haiku-4-5: { input: 1.00, output: 5.00 }
+  claude-sonnet-5: { input: 3.00, output: 15.00 }
+  claude-opus-5: { input: 5.00, output: 25.00 }
+  # Models without a pricing entry are logged with cost 0 and flagged "unpriced" in the Costs screen.
