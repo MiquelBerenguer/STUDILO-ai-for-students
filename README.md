@@ -10,7 +10,7 @@ student who follows the course with you:
 4. Agents merge the content into structured **topic notes** (every section links to its source) and
    keep a living **course memory**: sessions, pace, topic dependencies, missed classes, open doubts.
 5. At T-14, T-7 and T-3 days before each exam, the Exam agent builds an **Exam Pack**: a study guide
-   and several verified mock exams with solutions and rubrics, all citing your notes.
+   and several verified practice exams with solutions and rubrics, all citing your notes.
 
 ## Quick start
 Requirements: [uv](https://docs.astral.sh/uv/) and Node.js ≥ 20. uv installs Python 3.12 itself.

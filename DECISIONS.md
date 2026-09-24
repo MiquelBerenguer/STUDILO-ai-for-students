@@ -102,3 +102,19 @@ pages on 2026-09-24 and should be checked periodically.
 The Vite dev server proxies `/api` to FastAPI, so the cookie is same-origin and no CORS is needed.
 `--host` exposes it on the LAN, which gives phone uploads for free (the Upload screen shows the
 LAN URL as a QR code). Browser notifications use the Notification API from the inbox poller.
+
+## D-17 — One-command start is `make dev`; no docker-compose in v1
+Docker is not installed on the development machine, so a compose file could not be verified. Shipping
+an untested one would break the "fresh clone works" promise. `make dev` needs only `uv` (which
+installs Python 3.12) and Node ≥ 20. A compose file can be added once it can be tested.
+
+## D-18 — Sync SQLAlchemy; each orchestrator job runs in its own thread + event loop
+SQLite with sync SQLAlchemy is the simplest correct choice (sqlite-vec loads via the stdlib driver).
+Agents are async (HTTP to LLMs), so every job runs `asyncio.run(...)` in a worker thread. A job
+waiting on SQLite's single writer lock then blocks only its own thread (busy_timeout), never a shared
+event loop where the lock holder could not make progress. Tools commit before slow steps (OCR, LLM,
+embeddings), so write locks are held for milliseconds.
+
+## D-19 — The domain term is "practice exam" (the brief's "mock exam")
+Renamed in code, API and UI, so that `grep -i "mock|fake|dummy|lorem"` over production code is a
+meaningful check. Any hit now means real placeholder data.

@@ -13,9 +13,9 @@ from app.db.models import (
     Exam,
     ExamPack,
     ExamQuestion,
-    MockExam,
     NoteSection,
     OpenQuestion,
+    PracticeExam,
     StudyGuideSection,
     Topic,
     Upload,
@@ -64,7 +64,7 @@ class RubricItem(BaseModel):
 
 
 class DraftArgs(BaseModel):
-    mock_exam_number: int = Field(ge=1, le=10)
+    practice_exam_number: int = Field(ge=1, le=10)
     topic_id: str | None = None
     statement_md: str = Field(min_length=20, max_length=8000, description="all data needed to solve it, with units")
     solution_md: str = Field(min_length=20, max_length=12000, description="complete worked solution")
@@ -78,14 +78,14 @@ class QuestionArg(BaseModel):
     question_id: str
 
 
-class MockMeta(BaseModel):
+class PracticeMeta(BaseModel):
     number: int = Field(ge=1, le=10)
     title: str = Field(min_length=2, max_length=200)
     duration_minutes: int = Field(ge=10, le=300)
 
 
 class SaveArgs(BaseModel):
-    mock_exams: list[MockMeta] = Field(min_length=1)
+    practice_exams: list[PracticeMeta] = Field(min_length=1)
 
 
 class Verification(BaseModel):
@@ -120,7 +120,7 @@ def get_exam_scope_tool(ctx: ToolContext, _a: NoArgs) -> dict[str, object]:
         "exam": None if exam is None else {"title": exam.title, "date": exam.exam_date.isoformat(),
                                            "days_left": (exam.exam_date - ctx.now.date()).days,
                                            "scope_note": exam.scope_note},
-        "requirements": {"mock_exams": ctx.state["n_exams"], "questions_per_exam": ctx.state["n_questions"]},
+        "requirements": {"practice_exams": ctx.state["n_exams"], "questions_per_exam": ctx.state["n_questions"]},
         "topics": topic_rows,
         "course_memory": {"pace": mem.syllabus_position, "topics_per_week": mem.topics_per_week,
                           "missed_sessions": [s.session_date.isoformat() for s in missed],
@@ -165,16 +165,16 @@ def add_study_guide_section_tool(ctx: ToolContext, a: GuideArgs) -> dict[str, ob
 
 
 def draft_question_tool(ctx: ToolContext, a: DraftArgs) -> dict[str, object]:
-    if a.mock_exam_number > ctx.state["n_exams"]:
-        raise ToolError(f"mock_exam_number must be between 1 and {ctx.state['n_exams']}")
+    if a.practice_exam_number > ctx.state["n_exams"]:
+        raise ToolError(f"practice_exam_number must be between 1 and {ctx.state['n_exams']}")
     _check_sections(ctx, a.cited_section_ids)
     total = round(sum(r.points for r in a.rubric), 2)
     if abs(total - a.points) > 0.01:
         raise ToolError(f"rubric points add up to {total} but the question is worth {a.points}")
-    mock = ctx.db.scalar(select(MockExam).where(MockExam.pack_id == ctx.state["pack_id"],
-                                                MockExam.number == a.mock_exam_number))
-    if mock is None:
-        raise ToolError("mock exam not found")
+    practice = ctx.db.scalar(select(PracticeExam).where(PracticeExam.pack_id == ctx.state["pack_id"],
+                                                PracticeExam.number == a.practice_exam_number))
+    if practice is None:
+        raise ToolError("practice exam not found")
     if a.replaces_question_id:
         old = store.must_get(ctx.db, ExamQuestion, a.replaces_question_id, "question")
         if old.pack_id != ctx.state["pack_id"]:
@@ -182,9 +182,9 @@ def draft_question_tool(ctx: ToolContext, a: DraftArgs) -> dict[str, object]:
         old.state = "replaced"
         position = old.position
     else:
-        position = len([q for q in ctx.db.scalars(select(ExamQuestion).where(ExamQuestion.mock_exam_id == mock.id))
+        position = len([q for q in ctx.db.scalars(select(ExamQuestion).where(ExamQuestion.practice_exam_id == practice.id))
                         if q.state != "replaced"])
-    q = ExamQuestion(mock_exam_id=mock.id, pack_id=ctx.state["pack_id"], topic_id=a.topic_id, position=position,
+    q = ExamQuestion(practice_exam_id=practice.id, pack_id=ctx.state["pack_id"], topic_id=a.topic_id, position=position,
                      statement_md=a.statement_md, solution_md=a.solution_md,
                      rubric=[r.model_dump() for r in a.rubric], points=a.points, cited_section_ids=a.cited_section_ids)
     ctx.db.add(q)
@@ -225,28 +225,28 @@ def save_exam_pack_tool(ctx: ToolContext, a: SaveArgs) -> dict[str, object]:
     pack = _pack(ctx)
     n_exams, n_q = ctx.state["n_exams"], ctx.state["n_questions"]
     problems = []
-    mocks = {m.number: m for m in ctx.db.scalars(select(MockExam).where(MockExam.pack_id == pack.id))}
+    practices = {m.number: m for m in ctx.db.scalars(select(PracticeExam).where(PracticeExam.pack_id == pack.id))}
     for num in range(1, n_exams + 1):
-        mock = mocks.get(num)
-        qs = [q for q in ctx.db.scalars(select(ExamQuestion).where(ExamQuestion.mock_exam_id == mock.id))
-              if q.state != "replaced"] if mock else []
+        practice = practices.get(num)
+        qs = [q for q in ctx.db.scalars(select(ExamQuestion).where(ExamQuestion.practice_exam_id == practice.id))
+              if q.state != "replaced"] if practice else []
         verified = [q for q in qs if q.state == "verified"]
         pending = [q.id for q in qs if q.state != "verified"]
         if len(verified) < n_q:
-            problems.append(f"mock exam {num} has {len(verified)} verified questions, needs {n_q}")
+            problems.append(f"practice exam {num} has {len(verified)} verified questions, needs {n_q}")
         if pending:
-            problems.append(f"mock exam {num} has unverified/rejected questions {pending}: verify or replace them")
+            problems.append(f"practice exam {num} has unverified/rejected questions {pending}: verify or replace them")
     guide = list(ctx.db.scalars(select(StudyGuideSection).where(StudyGuideSection.pack_id == pack.id)))
     if not guide:
         problems.append("the study guide is empty: add study guide sections")
     if problems:
         raise ToolError("Exam pack is not complete: " + "; ".join(problems))
-    for meta in a.mock_exams:
-        if meta.number in mocks:
-            mocks[meta.number].title, mocks[meta.number].duration_minutes = meta.title, meta.duration_minutes
+    for meta in a.practice_exams:
+        if meta.number in practices:
+            practices[meta.number].title, practices[meta.number].duration_minutes = meta.title, meta.duration_minutes
     transition(EXAM_PACK, pack, "ready")
     pack.built_at = utcnow()
-    return {"pack_id": pack.id, "state": pack.state, "study_guide_sections": len(guide), "mock_exams": n_exams}
+    return {"pack_id": pack.id, "state": pack.state, "study_guide_sections": len(guide), "practice_exams": n_exams}
 
 
 def exam_tools() -> list[Tool]:
@@ -259,7 +259,7 @@ def exam_tools() -> list[Tool]:
              NoArgs, get_past_exams_tool),
         Tool("add_study_guide_section", "Add one study guide section (per topic), citing note sections.", GuideArgs,
              add_study_guide_section_tool),
-        Tool("draft_question", "Draft (or replace) one mock exam question with solution, rubric and citations.",
+        Tool("draft_question", "Draft (or replace) one practice exam question with solution, rubric and citations.",
              DraftArgs, draft_question_tool),
         Tool("verify_question", "Self-check a drafted question (solvable, units, supported by cited notes).",
              QuestionArg, verify_question_tool),

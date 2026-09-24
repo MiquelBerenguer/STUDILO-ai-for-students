@@ -20,8 +20,8 @@ from app.db.models import (
     Course,
     Exam,
     ExamPack,
-    MockExam,
     NoteSection,
+    PracticeExam,
     SectionSource,
     Topic,
     Upload,
@@ -158,7 +158,7 @@ async def handle_process_upload(ctx: ToolContext, payload: dict[str, Any]) -> di
         if CLASS_SESSION.can(session.state, "uploaded"):
             transition(CLASS_SESSION, session, "uploaded")
         if upload.kind == "past_exam":
-            _set_upload(ctx, upload, "done", "Past exam stored — used as style reference for mock exams")
+            _set_upload(ctx, upload, "done", "Past exam stored — used as style reference for practice exams")
             return {"upload_id": upload.id, "kind": "past_exam"}
 
         # --- Notes agent
@@ -260,16 +260,16 @@ async def handle_build_exam_pack(ctx: ToolContext, payload: dict[str, Any]) -> d
                     trigger=str(trigger), notes_cutoff=utcnow(), job_id=ctx.job_id)
     ctx.db.add(pack)
     ctx.db.flush()
-    for n in range(1, s.EXAM_PACK_MOCK_EXAMS + 1):
-        ctx.db.add(MockExam(pack_id=pack.id, number=n, title=f"Mock exam {n}"))
+    for n in range(1, s.EXAM_PACK_PRACTICE_EXAMS + 1):
+        ctx.db.add(PracticeExam(pack_id=pack.id, number=n, title=f"Practice exam {n}"))
     transition(EXAM_PACK, pack, "building")
     ctx.db.commit()
-    ctx.state.update(pack_id=pack.id, course_id=course.id, n_exams=s.EXAM_PACK_MOCK_EXAMS,
+    ctx.state.update(pack_id=pack.id, course_id=course.id, n_exams=s.EXAM_PACK_PRACTICE_EXAMS,
                      n_questions=s.EXAM_PACK_QUESTIONS_PER_EXAM)
     ctx.progress(f"Building exam pack v{pack.version} for {course.name}…")
     goal = (f"Build Exam Pack v{pack.version} for subject {course.name!r}"
             + (f", exam {exam.title!r} on {exam.exam_date.isoformat()}" if exam else " (on-demand practice exam)")
-            + f". Trigger: {trigger}. Requirements: {s.EXAM_PACK_MOCK_EXAMS} mock exams × "
+            + f". Trigger: {trigger}. Requirements: {s.EXAM_PACK_PRACTICE_EXAMS} practice exams × "
               f"{s.EXAM_PACK_QUESTIONS_PER_EXAM} verified questions, plus a study guide. Start with get_exam_scope.")
     try:
         res = await ExamAgent().run(ctx, goal)
@@ -283,7 +283,7 @@ async def handle_build_exam_pack(ctx: ToolContext, payload: dict[str, Any]) -> d
         raise JobFailed(f"Exam agent did not complete the pack (state {res.state})")
     await PLANNER_TOOLS["create_reminder"].invoke(ctx, {
         "kind": "exam_pack", "title": f"Exam Pack ready: {exam.title if exam else course.name} (v{pack.version})",
-        "body": f"Study guide + {s.EXAM_PACK_MOCK_EXAMS} mock exams with solutions, built from your notes.",
+        "body": f"Study guide + {s.EXAM_PACK_PRACTICE_EXAMS} practice exams with solutions, built from your notes.",
         "link": f"/packs/{pack.id}", "data": {"pack_id": pack.id}})
     ctx.db.commit()
     return {"pack_id": pack.id, "version": pack.version}

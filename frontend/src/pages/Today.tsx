@@ -43,7 +43,7 @@ export default function Today() {
           <ol className="mt-2 grid gap-3 text-sm text-slate-600 md:grid-cols-3">
             <li><b>1. After each class</b> you get a prompt: upload your notes (PDF, photo or text).</li>
             <li><b>2. Studilo organises them</b> into topic notes and a course memory, with sources.</li>
-            <li><b>3. Before exams</b> an Exam Pack appears: study guide + mock exams from your notes.</li>
+            <li><b>3. Before exams</b> an Exam Pack appears: study guide + practice exams from your notes.</li>
           </ol>
         </div>
       )}

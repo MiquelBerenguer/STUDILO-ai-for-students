@@ -57,7 +57,7 @@ Postgres/RabbitMQ/MinIO plumbing being removed.
 | `src/api-gateway/**` | **Delete** | Replaced by `backend/app/api`. Its sync-SQLAlchemy/JWT auth is replaced by DB-backed sessions. |
 | `src/main.py`, `src/api/`, `src/shared/**` (except chunker idea) | **Delete** | Duplicate entrypoints and clients. |
 | `src/infrastructure/**` (Postgres HA, HAProxy, Redis, RabbitMQ, Prometheus/Grafana, Logstash, PowerShell/MinIO scripts) | **Delete** | Local-first v1 needs none of these (D-02, D-03). |
-| `docker-compose.yml` (26 services), `requirements.txt`, `Makefile`, `.github/workflows/ci.yml` | **Rewrite** | Replaced by a 2-service compose, `make dev` and a real CI. |
+| `docker-compose.yml` (26 services), `requirements.txt`, `Makefile`, `.github/workflows/ci.yml` | **Delete / rewrite** | Replaced by `make dev` (D-17) and a real CI. |
 | `tests/**` | **Delete** | They hit live services with fake ids. New tests live in `backend/tests`. `contexto_examen.pdf` is kept as a real-world text-PDF fixture. |
 | `k8s/`, `config/`, `.vs/`, `docs/{api,architecture,runbooks}/.gitkeep` | **Delete** | Empty placeholders or IDE state. |
 | Tracked `.env` files | **Delete** (see A1) | Secrets. |
@@ -69,8 +69,8 @@ Postgres/RabbitMQ/MinIO plumbing being removed.
 ```
 .
 ├── PLAN.md  DECISIONS.md  UX.md  CHANGELOG.md  README.md  CLAUDE.md
-├── Makefile                  # make setup | make dev | make test | make migrate
-├── docker-compose.yml        # optional: backend + frontend containers
+├── Makefile                  # make setup | make dev | make test | make migrate | make secrets-scan
+├── scripts/ensure_secret.py  # generates APP_SECRET_KEY on first setup
 ├── .env.example              # every key, empty values
 ├── backend/
 │   ├── pyproject.toml, uv.lock, alembic.ini

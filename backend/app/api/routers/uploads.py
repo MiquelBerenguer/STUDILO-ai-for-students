@@ -84,10 +84,18 @@ def get_upload(upload_id: str, db: DB) -> UploadDetailOut:
                                            "log": [IngestionLogOut.model_validate(r) for r in logs]})
 
 
+_MEDIA = {"pdf": "application/pdf", "png": "image/png", "jpeg": "image/jpeg", "heic": "image/heic",
+          "webp": "image/webp", "tiff": "image/tiff", "text": "text/plain; charset=utf-8"}
+
+
 @router.get("/uploads/{upload_id}/file")
 def get_upload_file(upload_id: str, db: DB) -> FileResponse:
+    """Serve with the media type from the magic-byte detection, never from the user-supplied filename."""
     upload = get_or_404(db, Upload, upload_id)
-    return FileResponse(upload_path(upload), filename=upload.filename)
+    return FileResponse(upload_path(upload), media_type=_MEDIA.get(upload.detected_type, "application/octet-stream"),
+                        filename=upload.filename, content_disposition_type="inline",
+                        headers={"X-Content-Type-Options": "nosniff",
+                                 "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'"})
 
 
 @router.post("/uploads/{upload_id}/retry", response_model=UploadOut)

@@ -113,7 +113,7 @@ class ScriptedAdapter:
                 "content_md": f"Key ideas of {t['title']}: $Q = \\Delta U + W$ with consistent units (J).",
                 "cited_section_ids": [t["sections"][0]["section_id"]]}, i) for i, t in enumerate(topics)]
         drafts = [r for n, r in results if n == "draft_question" and isinstance(r, dict) and "question_id" in r]
-        needed = req["mock_exams"] * req["questions_per_exam"]
+        needed = req["practice_exams"] * req["questions_per_exam"]
         verified = {r["question_id"]: r for n, r in results if n == "verify_question" and isinstance(r, dict)
                     and "passed" in r}
         rejected = [qid for qid, r in verified.items() if not r["passed"]]
@@ -132,12 +132,12 @@ class ScriptedAdapter:
             t = topics[0]
             return [_call("draft_question", {**self._question(1, t), "replaces_question_id": q}, i)
                     for i, q in enumerate(to_fix)]
-        return [_call("save_exam_pack", {"mock_exams": [
-            {"number": n, "title": f"Mock exam {n}", "duration_minutes": 90} for n in range(1, req["mock_exams"] + 1)]})]
+        return [_call("save_exam_pack", {"practice_exams": [
+            {"number": n, "title": f"Practice exam {n}", "duration_minutes": 90} for n in range(1, req["practice_exams"] + 1)]})]
 
     @staticmethod
     def _question(number: int, topic: dict[str, Any]) -> dict[str, Any]:
-        return {"mock_exam_number": number, "topic_id": topic["topic_id"],
+        return {"practice_exam_number": number, "topic_id": topic["topic_id"],
                 "statement_md": "A closed system receives $Q = 500\\,\\text{J}$ of heat and does $W = 200\\,\\text{J}$ "
                                 "of work. Compute $\\Delta U$.",
                 "solution_md": "$\\Delta U = Q - W = 500 - 200 = 300\\,\\text{J}$.",

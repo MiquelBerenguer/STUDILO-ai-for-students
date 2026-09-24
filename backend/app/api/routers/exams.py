@@ -11,7 +11,7 @@ from app.api.schemas import (
     ExamPackOut,
     GuideSectionOut,
     JobOut,
-    MockExamOut,
+    PracticeExamOut,
     QuestionOut,
 )
 from app.db.base import utcnow
@@ -21,8 +21,8 @@ from app.db.models import (
     ExamAttempt,
     ExamPack,
     ExamQuestion,
-    MockExam,
     NoteSection,
+    PracticeExam,
     StudyGuideSection,
     Topic,
 )
@@ -41,8 +41,8 @@ def list_packs(db: DB, exam_id: str | None = None, course_id: str | None = None)
     return list(db.scalars(q))
 
 
-def _questions(db: DB, mock_id: str, reveal: bool) -> list[QuestionOut]:
-    rows = db.scalars(select(ExamQuestion).where(ExamQuestion.mock_exam_id == mock_id, ExamQuestion.state != "replaced")
+def _questions(db: DB, practice_id: str, reveal: bool) -> list[QuestionOut]:
+    rows = db.scalars(select(ExamQuestion).where(ExamQuestion.practice_exam_id == practice_id, ExamQuestion.state != "replaced")
                       .order_by(ExamQuestion.position))
     out = []
     for q in rows:
@@ -61,11 +61,11 @@ def get_pack(pack_id: str, db: DB, reveal: bool = False) -> ExamPackDetailOut:
     pack = get_or_404(db, ExamPack, pack_id)
     guide = list(db.scalars(select(StudyGuideSection).where(StudyGuideSection.pack_id == pack.id)
                             .order_by(StudyGuideSection.position)))
-    mocks = list(db.scalars(select(MockExam).where(MockExam.pack_id == pack.id).order_by(MockExam.number)))
-    mock_out = [MockExamOut.model_validate(m).model_copy(update={"questions": _questions(db, m.id, reveal)})
-                for m in mocks]
+    practices = list(db.scalars(select(PracticeExam).where(PracticeExam.pack_id == pack.id).order_by(PracticeExam.number)))
+    practice_out = [PracticeExamOut.model_validate(m).model_copy(update={"questions": _questions(db, m.id, reveal)})
+                for m in practices]
     cited = {sid for g in guide for sid in g.cited_section_ids} | \
-            {sid for m in mock_out for q in m.questions for sid in q.cited_section_ids}
+            {sid for m in practice_out for q in m.questions for sid in q.cited_section_ids}
     citations: dict[str, dict[str, str]] = {}
     for sid in cited:
         s = db.get(NoteSection, sid)
@@ -77,7 +77,7 @@ def get_pack(pack_id: str, db: DB, reveal: bool = False) -> ExamPackDetailOut:
     return ExamPackDetailOut.model_validate({
         **ExamPackOut.model_validate(pack).model_dump(),
         "study_guide": [GuideSectionOut.model_validate(g) for g in guide],
-        "mock_exams": mock_out, "citations": citations})
+        "practice_exams": practice_out, "citations": citations})
 
 
 @router.post("/exams/{exam_id}/build-pack", response_model=JobOut, status_code=202)
@@ -94,25 +94,25 @@ def practice_exam(course_id: str, db: DB) -> object:
     return emit(db, "exam_requested", {"course_id": course_id}, source="manual")
 
 
-@router.get("/mock-exams/{mock_id}", response_model=MockExamOut)
-def get_mock(mock_id: str, db: DB, reveal: bool = False) -> MockExamOut:
-    m = get_or_404(db, MockExam, mock_id)
-    return MockExamOut.model_validate(m).model_copy(update={"questions": _questions(db, m.id, reveal)})
+@router.get("/practice-exams/{practice_id}", response_model=PracticeExamOut)
+def get_practice(practice_id: str, db: DB, reveal: bool = False) -> PracticeExamOut:
+    m = get_or_404(db, PracticeExam, practice_id)
+    return PracticeExamOut.model_validate(m).model_copy(update={"questions": _questions(db, m.id, reveal)})
 
 
-@router.post("/mock-exams/{mock_id}/attempts", response_model=AttemptOut, status_code=201)
-def start_attempt(mock_id: str, db: DB) -> ExamAttempt:
-    get_or_404(db, MockExam, mock_id)
-    a = ExamAttempt(mock_exam_id=mock_id)
+@router.post("/practice-exams/{practice_id}/attempts", response_model=AttemptOut, status_code=201)
+def start_attempt(practice_id: str, db: DB) -> ExamAttempt:
+    get_or_404(db, PracticeExam, practice_id)
+    a = ExamAttempt(practice_exam_id=practice_id)
     db.add(a)
     db.flush()
     return a
 
 
-@router.get("/mock-exams/{mock_id}/attempts", response_model=list[AttemptOut])
-def list_attempts(mock_id: str, db: DB) -> list[ExamAttempt]:
-    get_or_404(db, MockExam, mock_id)
-    return list(db.scalars(select(ExamAttempt).where(ExamAttempt.mock_exam_id == mock_id)
+@router.get("/practice-exams/{practice_id}/attempts", response_model=list[AttemptOut])
+def list_attempts(practice_id: str, db: DB) -> list[ExamAttempt]:
+    get_or_404(db, PracticeExam, practice_id)
+    return list(db.scalars(select(ExamAttempt).where(ExamAttempt.practice_exam_id == practice_id)
                            .order_by(ExamAttempt.started_at.desc())))
 
 

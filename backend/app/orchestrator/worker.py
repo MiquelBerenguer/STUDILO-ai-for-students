@@ -130,11 +130,13 @@ class Orchestrator:
         await asyncio.gather(*self._tasks, return_exceptions=True)
 
     async def _worker_loop(self) -> None:
+        # Each job runs in its own thread + event loop. SQLite write locks are then waited on per
+        # thread (busy_timeout) instead of blocking one shared event loop while another job holds the lock.
         conc = get_settings().WORKER_CONCURRENCY
         while not self._stop.is_set():
             try:
                 while len(self._running) < conc and (claimed := claim_next()):
-                    task = asyncio.create_task(run_job(*claimed))
+                    task = asyncio.create_task(asyncio.to_thread(_run_job_in_thread, *claimed))
                     self._running.add(task)
                     task.add_done_callback(self._running.discard)
             except Exception:
@@ -145,7 +147,11 @@ class Orchestrator:
         interval = get_settings().SCHEDULER_INTERVAL_SECONDS
         while not self._stop.is_set():
             try:
-                await tick()
+                await asyncio.to_thread(lambda: asyncio.run(tick()))
             except Exception:
                 log.exception("scheduler tick error")
             await asyncio.sleep(interval)
+
+
+def _run_job_in_thread(job_id: str, user_id: str) -> str:
+    return asyncio.run(run_job(job_id, user_id))

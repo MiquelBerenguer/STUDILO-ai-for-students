@@ -36,7 +36,7 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("MODELS_CONFIG", str(models))
     monkeypatch.setenv("ENABLE_BACKGROUND", "false")
-    monkeypatch.setenv("EXAM_PACK_MOCK_EXAMS", "2")
+    monkeypatch.setenv("EXAM_PACK_PRACTICE_EXAMS", "2")
     monkeypatch.setenv("EXAM_PACK_QUESTIONS_PER_EXAM", "2")
 
     from app.config.models_config import reset_models_store

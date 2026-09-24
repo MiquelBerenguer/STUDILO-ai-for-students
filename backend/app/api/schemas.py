@@ -280,7 +280,7 @@ class QuestionOut(ORM):
     verification: dict[str, Any] | None = None
 
 
-class MockExamOut(ORM):
+class PracticeExamOut(ORM):
     id: str
     number: int
     title: str
@@ -313,13 +313,13 @@ class ExamPackOut(ORM):
 
 class ExamPackDetailOut(ExamPackOut):
     study_guide: list[GuideSectionOut]
-    mock_exams: list[MockExamOut]
+    practice_exams: list[PracticeExamOut]
     citations: dict[str, dict[str, str]]  # section_id -> {topic_title, heading, topic_id}
 
 
 class AttemptOut(ORM):
     id: str
-    mock_exam_id: str
+    practice_exam_id: str
     started_at: datetime
     submitted_at: datetime | None
     answers: dict[str, str]

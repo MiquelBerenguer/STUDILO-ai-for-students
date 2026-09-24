@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -26,6 +26,7 @@ from app.db.models import (
 from app.orchestrator import worker
 from app.orchestrator.events import emit
 from app.orchestrator.state_machines import JOB, transition
+from app.orchestrator.timeutil import local_today
 
 router = APIRouter(tags=["activity"])
 
@@ -60,7 +61,7 @@ def post_event(body: EventIn, user: CurrentUser, db: DB) -> Job:
     """UI actions emit exactly the events the scheduler emits."""
     if body.type == "class_ended":
         slot = get_or_404(db, ClassSlot, body.slot_id or "")
-        d = body.session_date or date.today()
+        d = body.session_date or local_today(utcnow(), user.timezone)
         return emit(db, "class_ended", {"slot_id": slot.id, "session_date": d.isoformat()}, source="manual")
     if body.type == "class_slot_passed_without_upload":
         sessions = list(db.scalars(select(ClassSession).where(ClassSession.state == "awaiting_upload")

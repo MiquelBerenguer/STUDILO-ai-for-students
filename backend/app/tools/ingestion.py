@@ -123,6 +123,7 @@ async def run_ocr_tool(ctx: ToolContext, a: PageArg) -> dict[str, object]:
     upload = _upload(ctx, a.upload_id)
     if upload.detected_type not in IMAGE_TYPES and upload.detected_type != "pdf":
         raise ToolError(f"cannot OCR a {upload.detected_type} file")
+    ctx.db.commit()  # never hold the SQLite write lock during slow OCR
     t0 = time.monotonic()
     img = await asyncio.to_thread(_page_image, ctx, upload, a.page)
     result = await asyncio.to_thread(run_ocr, img)

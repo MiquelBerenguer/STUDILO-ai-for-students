@@ -20,16 +20,16 @@ def test_exam_pack_is_grounded_verified_and_complete(client, scripted) -> None: 
     pack_id = job["result"]["pack_id"]
     hidden = client.get(f"/api/v1/packs/{pack_id}").json()
     assert hidden["state"] == "ready" and hidden["trigger"] == "manual"
-    assert all(q["solution_md"] is None for m in hidden["mock_exams"] for q in m["questions"])
+    assert all(q["solution_md"] is None for m in hidden["practice_exams"] for q in m["questions"])
 
     pack = client.get(f"/api/v1/packs/{pack_id}?reveal=true").json()
-    assert len(pack["mock_exams"]) == 2
+    assert len(pack["practice_exams"]) == 2
     note_sections = set()
     for t in client.get(f"/api/v1/courses/{thermo}/topics").json():
         note_sections |= {s["id"] for s in client.get(f"/api/v1/topics/{t['id']}/note").json()["sections"]}
-    for mock in pack["mock_exams"]:
-        assert len(mock["questions"]) == 2
-        for q in mock["questions"]:
+    for practice in pack["practice_exams"]:
+        assert len(practice["questions"]) == 2
+        for q in practice["questions"]:
             assert q["state"] == "verified" and q["verification"]["passed"]
             assert q["solution_md"] and sum(r["points"] for r in q["rubric"]) == q["points"]
             assert set(q["cited_section_ids"]) <= note_sections and q["cited_section_ids"]
@@ -50,9 +50,9 @@ def test_timed_attempt_locks_answers_after_submit(client) -> None:  # type: igno
     job = client.post(f"/api/v1/courses/{ids['thermo']['id']}/practice-exam").json()
     drain()
     pack_id = client.get(f"/api/v1/jobs/{job['id']}").json()["result"]["pack_id"]
-    mock = client.get(f"/api/v1/packs/{pack_id}").json()["mock_exams"][0]
-    attempt = client.post(f"/api/v1/mock-exams/{mock['id']}/attempts").json()
-    qid = mock["questions"][0]["id"]
+    practice = client.get(f"/api/v1/packs/{pack_id}").json()["practice_exams"][0]
+    attempt = client.post(f"/api/v1/practice-exams/{practice['id']}/attempts").json()
+    qid = practice["questions"][0]["id"]
     r = client.put(f"/api/v1/attempts/{attempt['id']}", json={"answers": {qid: "300 J"}, "submit": True})
     assert r.json()["submitted_at"]
     assert client.put(f"/api/v1/attempts/{attempt['id']}", json={"answers": {qid: "changed"}}).status_code == 409

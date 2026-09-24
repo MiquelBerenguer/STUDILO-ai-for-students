@@ -315,8 +315,8 @@ class StudyGuideSection(IdMixin, TimestampMixin, UserOwned, Base):
     cited_section_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
 
 
-class MockExam(IdMixin, TimestampMixin, UserOwned, Base):
-    __tablename__ = "mock_exams"
+class PracticeExam(IdMixin, TimestampMixin, UserOwned, Base):
+    __tablename__ = "practice_exams"
     pack_id: Mapped[str] = mapped_column(ForeignKey("exam_packs.id", ondelete="CASCADE"), index=True)
     number: Mapped[int] = mapped_column(Integer)
     title: Mapped[str] = mapped_column(String(200), default="")
@@ -325,7 +325,7 @@ class MockExam(IdMixin, TimestampMixin, UserOwned, Base):
 
 class ExamQuestion(IdMixin, TimestampMixin, UserOwned, Base):
     __tablename__ = "exam_questions"
-    mock_exam_id: Mapped[str] = mapped_column(ForeignKey("mock_exams.id", ondelete="CASCADE"), index=True)
+    practice_exam_id: Mapped[str] = mapped_column(ForeignKey("practice_exams.id", ondelete="CASCADE"), index=True)
     pack_id: Mapped[str] = mapped_column(ForeignKey("exam_packs.id", ondelete="CASCADE"), index=True)
     topic_id: Mapped[str | None] = mapped_column(ForeignKey("topics.id", ondelete="SET NULL"), nullable=True)
     position: Mapped[int] = mapped_column(Integer, default=0)
@@ -340,7 +340,7 @@ class ExamQuestion(IdMixin, TimestampMixin, UserOwned, Base):
 
 class ExamAttempt(IdMixin, TimestampMixin, UserOwned, Base):
     __tablename__ = "exam_attempts"
-    mock_exam_id: Mapped[str] = mapped_column(ForeignKey("mock_exams.id", ondelete="CASCADE"), index=True)
+    practice_exam_id: Mapped[str] = mapped_column(ForeignKey("practice_exams.id", ondelete="CASCADE"), index=True)
     started_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
     submitted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     answers: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)

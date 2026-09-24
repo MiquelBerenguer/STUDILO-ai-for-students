@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     SCHEDULER_INTERVAL_SECONDS: int = 30
     WORKER_CONCURRENCY: int = 2
     MISSED_UPLOAD_AFTER_HOURS: int = 12
-    EXAM_PACK_MOCK_EXAMS: int = 2
+    EXAM_PACK_PRACTICE_EXAMS: int = 2
     EXAM_PACK_QUESTIONS_PER_EXAM: int = 4
 
     @field_validator("OLLAMA_BASE_URL")

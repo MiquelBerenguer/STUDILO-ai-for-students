@@ -391,7 +391,7 @@ def upgrade() -> None:
         batch_op.create_index(batch_op.f('ix_llm_calls_task'), ['task'], unique=False)
         batch_op.create_index(batch_op.f('ix_llm_calls_user_id'), ['user_id'], unique=False)
 
-    op.create_table('mock_exams',
+    op.create_table('practice_exams',
     sa.Column('pack_id', sa.String(length=36), nullable=False),
     sa.Column('number', sa.Integer(), nullable=False),
     sa.Column('title', sa.String(length=200), nullable=False),
@@ -399,13 +399,13 @@ def upgrade() -> None:
     sa.Column('id', sa.String(length=36), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('user_id', sa.String(length=36), nullable=False),
-    sa.ForeignKeyConstraint(['pack_id'], ['exam_packs.id'], name=op.f('fk_mock_exams_pack_id_exam_packs'), ondelete='CASCADE'),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], name=op.f('fk_mock_exams_user_id_users'), ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id', name=op.f('pk_mock_exams'))
+    sa.ForeignKeyConstraint(['pack_id'], ['exam_packs.id'], name=op.f('fk_practice_exams_pack_id_exam_packs'), ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], name=op.f('fk_practice_exams_user_id_users'), ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_practice_exams'))
     )
-    with op.batch_alter_table('mock_exams', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_mock_exams_pack_id'), ['pack_id'], unique=False)
-        batch_op.create_index(batch_op.f('ix_mock_exams_user_id'), ['user_id'], unique=False)
+    with op.batch_alter_table('practice_exams', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_practice_exams_pack_id'), ['pack_id'], unique=False)
+        batch_op.create_index(batch_op.f('ix_practice_exams_user_id'), ['user_id'], unique=False)
 
     op.create_table('study_guide_sections',
     sa.Column('pack_id', sa.String(length=36), nullable=False),
@@ -456,7 +456,7 @@ def upgrade() -> None:
         batch_op.create_index(batch_op.f('ix_uploads_user_id'), ['user_id'], unique=False)
 
     op.create_table('exam_attempts',
-    sa.Column('mock_exam_id', sa.String(length=36), nullable=False),
+    sa.Column('practice_exam_id', sa.String(length=36), nullable=False),
     sa.Column('started_at', sa.DateTime(), nullable=False),
     sa.Column('submitted_at', sa.DateTime(), nullable=True),
     sa.Column('answers', sa.JSON(), nullable=False),
@@ -464,16 +464,16 @@ def upgrade() -> None:
     sa.Column('id', sa.String(length=36), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('user_id', sa.String(length=36), nullable=False),
-    sa.ForeignKeyConstraint(['mock_exam_id'], ['mock_exams.id'], name=op.f('fk_exam_attempts_mock_exam_id_mock_exams'), ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['practice_exam_id'], ['practice_exams.id'], name=op.f('fk_exam_attempts_practice_exam_id_practice_exams'), ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], name=op.f('fk_exam_attempts_user_id_users'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_exam_attempts'))
     )
     with op.batch_alter_table('exam_attempts', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_exam_attempts_mock_exam_id'), ['mock_exam_id'], unique=False)
+        batch_op.create_index(batch_op.f('ix_exam_attempts_practice_exam_id'), ['practice_exam_id'], unique=False)
         batch_op.create_index(batch_op.f('ix_exam_attempts_user_id'), ['user_id'], unique=False)
 
     op.create_table('exam_questions',
-    sa.Column('mock_exam_id', sa.String(length=36), nullable=False),
+    sa.Column('practice_exam_id', sa.String(length=36), nullable=False),
     sa.Column('pack_id', sa.String(length=36), nullable=False),
     sa.Column('topic_id', sa.String(length=36), nullable=True),
     sa.Column('position', sa.Integer(), nullable=False),
@@ -487,14 +487,14 @@ def upgrade() -> None:
     sa.Column('id', sa.String(length=36), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('user_id', sa.String(length=36), nullable=False),
-    sa.ForeignKeyConstraint(['mock_exam_id'], ['mock_exams.id'], name=op.f('fk_exam_questions_mock_exam_id_mock_exams'), ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['practice_exam_id'], ['practice_exams.id'], name=op.f('fk_exam_questions_practice_exam_id_practice_exams'), ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['pack_id'], ['exam_packs.id'], name=op.f('fk_exam_questions_pack_id_exam_packs'), ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['topic_id'], ['topics.id'], name=op.f('fk_exam_questions_topic_id_topics'), ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], name=op.f('fk_exam_questions_user_id_users'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_exam_questions'))
     )
     with op.batch_alter_table('exam_questions', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_exam_questions_mock_exam_id'), ['mock_exam_id'], unique=False)
+        batch_op.create_index(batch_op.f('ix_exam_questions_practice_exam_id'), ['practice_exam_id'], unique=False)
         batch_op.create_index(batch_op.f('ix_exam_questions_pack_id'), ['pack_id'], unique=False)
         batch_op.create_index(batch_op.f('ix_exam_questions_user_id'), ['user_id'], unique=False)
 
@@ -588,12 +588,12 @@ def downgrade() -> None:
     with op.batch_alter_table('exam_questions', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_exam_questions_user_id'))
         batch_op.drop_index(batch_op.f('ix_exam_questions_pack_id'))
-        batch_op.drop_index(batch_op.f('ix_exam_questions_mock_exam_id'))
+        batch_op.drop_index(batch_op.f('ix_exam_questions_practice_exam_id'))
 
     op.drop_table('exam_questions')
     with op.batch_alter_table('exam_attempts', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_exam_attempts_user_id'))
-        batch_op.drop_index(batch_op.f('ix_exam_attempts_mock_exam_id'))
+        batch_op.drop_index(batch_op.f('ix_exam_attempts_practice_exam_id'))
 
     op.drop_table('exam_attempts')
     with op.batch_alter_table('uploads', schema=None) as batch_op:
@@ -606,11 +606,11 @@ def downgrade() -> None:
         batch_op.drop_index(batch_op.f('ix_study_guide_sections_pack_id'))
 
     op.drop_table('study_guide_sections')
-    with op.batch_alter_table('mock_exams', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_mock_exams_user_id'))
-        batch_op.drop_index(batch_op.f('ix_mock_exams_pack_id'))
+    with op.batch_alter_table('practice_exams', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_practice_exams_user_id'))
+        batch_op.drop_index(batch_op.f('ix_practice_exams_pack_id'))
 
-    op.drop_table('mock_exams')
+    op.drop_table('practice_exams')
     with op.batch_alter_table('llm_calls', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_llm_calls_user_id'))
         batch_op.drop_index(batch_op.f('ix_llm_calls_task'))

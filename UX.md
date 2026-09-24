@@ -80,10 +80,10 @@ Auth screens and the onboarding wizard are full-screen and have no sidebar.
 ### 6. Exams & Exam Pack
 - **Exams list**: each exam with countdown, pack versions (state, trigger T-14/T-7/T-3/manual, date),
   **Build / Refresh pack**, and add/edit/delete exam.
-- **Exam Pack page**: tabs **Study guide** | **Mock exams**.
+- **Exam Pack page**: tabs **Study guide** | **Practice exams**.
   - Study guide: sections per topic, rendered with KaTeX, each with "Sources: Topic › Section" links
     to the note.
-  - Mock exams: cards (title, duration, number of questions, total points). **Start timed exam** →
+  - Practice exams: cards (title, duration, number of questions, total points). **Start timed exam** →
     full-screen timer, questions, answer textareas, **Submit** (auto-submit at 0). After submission:
     solutions, rubric with self-scoring inputs, per-question citations, and the verification badge.
   - **Export PDF**: print stylesheet (one section per page, no navigation). Uses browser "Save as PDF".

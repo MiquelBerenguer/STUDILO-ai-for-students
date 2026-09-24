@@ -41,10 +41,10 @@ def two_users(app):  # type: ignore[no-untyped-def]
 def test_every_id_endpoint_hides_foreign_rows(two_users) -> None:  # type: ignore[no-untyped-def]
     t, b = two_users, two_users["b"]
     ids, pack = t["ids"], t["pack"]
-    mock = pack["mock_exams"][0]
+    practice = pack["practice_exams"][0]
     run_id = t["a"].get("/api/v1/activity/runs").json()[0]["id"]
     notif_id = t["a"].get("/api/v1/inbox").json()[0]["id"]
-    attempt = t["a"].post(f"/api/v1/mock-exams/{mock['id']}/attempts").json()
+    attempt = t["a"].post(f"/api/v1/practice-exams/{practice['id']}/attempts").json()
     probes = [
         ("GET", f"/api/v1/courses/{ids['thermo']['id']}"), ("PUT", f"/api/v1/courses/{ids['thermo']['id']}"),
         ("DELETE", f"/api/v1/courses/{ids['thermo']['id']}"), ("GET", f"/api/v1/courses/{ids['thermo']['id']}/topics"),
@@ -53,8 +53,8 @@ def test_every_id_endpoint_hides_foreign_rows(two_users) -> None:  # type: ignor
         ("DELETE", f"/api/v1/exams/{ids['exam']['id']}"), ("GET", f"/api/v1/uploads/{t['upload']['id']}"),
         ("GET", f"/api/v1/uploads/{t['upload']['id']}/file"), ("POST", f"/api/v1/uploads/{t['upload']['id']}/retry"),
         ("GET", f"/api/v1/topics/{t['topic_id']}/note"), ("GET", f"/api/v1/packs/{pack['id']}"),
-        ("GET", f"/api/v1/packs/{pack['id']}?reveal=true"), ("GET", f"/api/v1/mock-exams/{mock['id']}?reveal=true"),
-        ("POST", f"/api/v1/mock-exams/{mock['id']}/attempts"), ("GET", f"/api/v1/mock-exams/{mock['id']}/attempts"),
+        ("GET", f"/api/v1/packs/{pack['id']}?reveal=true"), ("GET", f"/api/v1/practice-exams/{practice['id']}?reveal=true"),
+        ("POST", f"/api/v1/practice-exams/{practice['id']}/attempts"), ("GET", f"/api/v1/practice-exams/{practice['id']}/attempts"),
         ("PUT", f"/api/v1/attempts/{attempt['id']}"), ("POST", f"/api/v1/exams/{ids['exam']['id']}/build-pack"),
         ("POST", f"/api/v1/courses/{ids['thermo']['id']}/practice-exam"), ("GET", f"/api/v1/jobs/{t['job_id']}"),
         ("POST", f"/api/v1/jobs/{t['job_id']}/retry"), ("GET", f"/api/v1/activity/runs/{run_id}"),
@@ -162,3 +162,11 @@ def test_agent_tools_cannot_reach_foreign_rows(two_users) -> None:  # type: igno
         assert hits == []
     finally:
         db.close()
+
+
+def test_uploaded_files_are_served_with_detected_type_not_filename(client) -> None:  # type: ignore[no-untyped-def]
+    ids = onboard(client)
+    d = upload(client, ids["thermo"]["id"], "evil.html", b"<script>alert(1)</script> notes about entropy", run=False)
+    r = client.get(f"/api/v1/uploads/{d['id']}/file")
+    assert r.headers["content-type"].startswith("text/plain")
+    assert r.headers["x-content-type-options"] == "nosniff"

@@ -172,7 +172,7 @@ export interface Question {
   verification: Record<string, unknown> | null;
 }
 
-export interface MockExam {
+export interface PracticeExam {
   id: string;
   number: number;
   title: string;
@@ -205,13 +205,13 @@ export interface ExamPack {
 
 export interface ExamPackDetail extends ExamPack {
   study_guide: GuideSection[];
-  mock_exams: MockExam[];
+  practice_exams: PracticeExam[];
   citations: Record<string, { topic_id: string; topic_title: string; heading: string; course_id: string }>;
 }
 
 export interface Attempt {
   id: string;
-  mock_exam_id: string;
+  practice_exam_id: string;
   started_at: string;
   submitted_at: string | null;
   answers: Record<string, string>;

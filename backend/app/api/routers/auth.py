@@ -15,7 +15,7 @@ from app.db.models import User
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 # Constant-time-ish login: always run bcrypt even when the email does not exist.
-_DUMMY_HASH = hash_password("studilo-dummy-password")
+_TIMING_HASH = hash_password("studilo-timing-equaliser")
 
 
 def _set_cookie(resp: Response, token: str) -> None:
@@ -42,7 +42,7 @@ def register(body: RegisterIn, response: Response) -> User:
 def login(body: LoginIn, response: Response) -> User:
     with system_session_ctx() as db:
         user = db.scalar(select(User).where(User.email == body.email.lower()))
-        if not verify_password(body.password, user.password_hash if user else _DUMMY_HASH) or user is None:
+        if not verify_password(body.password, user.password_hash if user else _TIMING_HASH) or user is None:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Wrong email or password")
         _set_cookie(response, create_session(db, user.id))
         return user

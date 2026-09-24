@@ -53,7 +53,7 @@ def test_full_student_journey(app) -> None:  # type: ignore[no-untyped-def]
     fluids_mem = c.get(f"/api/v1/courses/{ids['fluids']['id']}/memory").json()
     assert fluids_mem["missed_count"] == 1
 
-    # 6. Exam approaching (T-14 via scheduler) → Exam Pack with study guide + ≥2 mock exams citing notes
+    # 6. Exam approaching (T-14 via scheduler) → Exam Pack with study guide + ≥2 practice exams citing notes
     t14 = datetime(2026, 10, 8, 8, 0, tzinfo=UTC)
     actions = c.post("/api/v1/simulate/tick", json={"now": t14.isoformat()}).json()["actions"]
     assert "exam_approaching Thermo midterm T-14" in actions
@@ -61,8 +61,8 @@ def test_full_student_journey(app) -> None:  # type: ignore[no-untyped-def]
     packs = c.get(f"/api/v1/packs?exam_id={ids['exam']['id']}").json()
     assert packs[0]["state"] == "ready" and packs[0]["trigger"] == "T-14"
     pack = c.get(f"/api/v1/packs/{packs[0]['id']}?reveal=true").json()
-    assert pack["study_guide"] and len(pack["mock_exams"]) >= 2
-    assert all(q["solution_md"] and q["cited_section_ids"] for mck in pack["mock_exams"] for q in mck["questions"])
+    assert pack["study_guide"] and len(pack["practice_exams"]) >= 2
+    assert all(q["solution_md"] and q["cited_section_ids"] for mck in pack["practice_exams"] for q in mck["questions"])
     assert all(v["topic_title"] for v in pack["citations"].values())
 
     # 7. Every agent run and LLM call is visible with its cost
