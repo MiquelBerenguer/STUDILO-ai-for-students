@@ -42,5 +42,5 @@ migrate:
 secrets-scan:
 	@command -v gitleaks >/dev/null || { echo "install gitleaks: brew install gitleaks"; exit 1; }
 	# History before the v1 pivot (eff5d11) contains committed .env files; see PLAN.md A1 (rotate those keys).
-	gitleaks git . --no-banner --log-opts="eff5d11..HEAD"
-	gitleaks dir . --no-banner
+	gitleaks git . --no-banner --redact --log-opts="eff5d11..HEAD"
+	gitleaks git . --no-banner --redact --pre-commit --staged
