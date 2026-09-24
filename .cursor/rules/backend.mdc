@@ -1,0 +1,16 @@
+---
+description: Studilo v1 rules (monorepo backend + frontend)
+alwaysApply: true
+---
+# Studilo v1 rules
+Full context: `CLAUDE.md`, `PLAN.md`, `DECISIONS.md`, `UX.md` in the repo root.
+The old Postgres/RabbitMQ/MinIO architecture (`../SDD-PLAN.md`) is superseded (DECISIONS D-01).
+
+- Python 3.11+ backend (FastAPI, SQLAlchemy 2 `select()` style, Alembic, SQLite + sqlite-vec). TypeScript frontend (React + Vite + Tailwind).
+- Pydantic models at every boundary; type hints on every function.
+- Secrets only in `.env`; models only in `backend/config/models.yaml`. Never hardcode or log keys.
+- Data access uses the user-scoped session; tools never accept `user_id`; vectors via `app/vectors.py`.
+- State changes via `transition()` in `app/orchestrator/state_machines.py`.
+- LLM calls only via `LLMClient` (cost-logged); deterministic methods first; log escalations.
+- Alembic migration for every schema change. No mocks in production code. No silent `except`.
+- Verify with `make test` (backend pytest + frontend typecheck/build).

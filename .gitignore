@@ -1,65 +1,29 @@
-﻿# Environment variables
+# Secrets
 .env
 .env.*
 !.env.example
 
-# Dependencies
-node_modules/
-vendor/
-**pycache**/
+# Python
+__pycache__/
 *.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
 
-# Build artifacts
-dist/
-build/
-*.egg-info/
+# Node
+node_modules/
+frontend/dist/
+*.tsbuildinfo
 
-# Logs
-logs/
-*.log
+# Local data (database, uploads, model cache)
+data/
 
-# OS files
+# OS / IDE
 .DS_Store
 Thumbs.db
-
-# IDE
 .vscode/
 .idea/
-*.swp
-*.swo
-
-# Docker volumes (permitir carpetas vacías con .gitkeep)
-data/*
-!data/.gitkeep
-postgres-data/
-redis-data/
-mongodb-data/
-minio-data/
-
-# Nuevos volúmenes específicos del proyecto
-postgres_master_data/
-# postgres_replica_data/  # COMENTADO TEMPORALMENTE
-pgadmin_data/
-redis_data/
-rabbitmq_data/
-minio_data/
-qdrant_data/
-prometheus_data/
-grafana_data/
-elasticsearch_data/
-kibana_data/
-
-# Coverage
-coverage/
-.coverage
-*.cover
-.pytest_cache/
-
-# Temp files
-*.tmp
-*.temp
-
-# Backups
-BACKUP_*.zip
-
 .vs/
+*.swp
+*.log

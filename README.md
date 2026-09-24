@@ -1,45 +1,46 @@
-# 🧠🚀 STUDILO Backend
-### *From Aerospace Engineering frustration to a high-performance AI Tutor.*
+# Studilo v1
 
----
+A local-first, multi-agent study assistant for engineering students. Studilo works like a second
+student who follows the course with you:
 
-## 📖 The "Why"
-**STUDILO** was born from a very real, very frustrating necessity. While studying for critical exams in **Aerospace Mechanics**, the creator found that theoretical knowledge wasn't enough to pass without active practice. 
+1. You set up your subjects, weekly schedule, semester and exam dates.
+2. When a class ends, Studilo asks for that class's notes (in-app inbox and browser notification).
+3. You upload a PDF, phone photos, scans or typed text. A **deterministic-first router** reads them
+   (text layer → local OCR → vision model only when needed).
+4. Agents merge the content into structured **topic notes** (every section links to its source) and
+   keep a living **course memory**: sessions, pace, topic dependencies, missed classes, open doubts.
+5. At T-14, T-7 and T-3 days before each exam, the Exam agent builds an **Exam Pack**: a study guide
+   and several verified mock exams with solutions and rubrics, all citing your notes.
 
-This isn't just another chatbot; it is a backend engine designed to **actively challenge** students. It generates dynamic study plans and progressive exams based strictly on user-provided notes, eliminating AI "hallucinations" through rigorous **Retrieval-Augmented Generation (RAG)**.
+## Quick start
+Requirements: [uv](https://docs.astral.sh/uv/) and Node.js ≥ 20. uv installs Python 3.12 itself.
 
----
+```bash
+cp .env.example .env        # fill in the provider keys referenced by backend/config/models.yaml
+make dev                    # installs deps, validates config, starts backend :8000 + frontend :5173
+```
+Open http://localhost:5173 and register. From a phone on the same Wi-Fi, open the LAN URL shown on
+the Upload screen.
 
-## 🏗️ System Design & Architecture
-Built with enterprise-grade scalability and reliability based on the **Alex Xu Framework**.
+- `make test`: backend tests (pytest) + frontend typecheck and build.
+- `make check`: validate `.env` + `models.yaml` without starting anything.
+- A missing key fails fast, naming it:
+  `OPENAI_API_KEY is not set (required by provider 'openai' for: exam_generation, …)`.
 
-### 1. Scalability & State
-* **Stateless Architecture**: The API layer holds no state; sessions are managed via **JWT** and external **Redis** clusters to allow for infinite horizontal scaling.
-* **Horizontal Scaling**: Designed to handle increased load by adding more instances rather than just bigger hardware.
-* **Load Balancing**: Implements distribution algorithms like **Round Robin** or **Least Connections** to handle traffic efficiently across instances.
+## Configuration
+- **Secrets**: `.env` only (gitignored). See `.env.example` for every key.
+- **Models**: `backend/config/models.yaml` maps each task (`jev_classification`, `vision_transcribe`,
+  `notes_structuring`, `course_memory`, `exam_generation`, `exam_verification`, `embeddings`) to a
+  provider/model with a fallback chain, plus per-model pricing for the cost log. Edit one line, or use
+  Settings → Models, to switch a model. The file is hot-reloaded, so no restart is needed.
+- Supported providers: `anthropic`, `openai`, `google`, `deepseek`, `openrouter`, `ollama` (local),
+  and `fastembed`/`local` for embeddings.
 
-### 2. Reliability & Decoupling
-* **Async Processing**: Heavy tasks (OCR, PDF Chunking) are decoupled from the main gateway using **Message Queues (RabbitMQ)** to prevent bottlenecks during peak traffic.
-* **No SPOF (Single Point of Failure)**: Every component is redundant. We use **PostgreSQL** with read replicas and automated failover to ensure the system never stays down.
-* **Fault Tolerance**: Implements patterns like **Retry with Backoff** and **Circuit Breakers** to handle service failures gracefully.
-
-### 3. Technical Rigor & Performance
-* **Vector Precision**: Uses **Qdrant** for semantic search, ensuring the AI only answers based on the context of your uploaded files.
-* **Multi-level Caching**: Utilizes a tiered strategy—from Browser to Database cache—to ensure sub-second response times.
-* **Observability**: Built-in monitoring of "Golden Signals" (Latency, Traffic, Errors, Saturation) to ensure system health.
-
----
-
-## 💻 Tech Stack
-| Component | Technology |
-| :--- | :--- |
-| **Orchestration & API** | FastAPI (Python) |
-| **Relational Database** | PostgreSQL (High Availability) |
-| **Cache & Sessions** | Redis Cluster (via Sentinel) |
-| **Message Broker** | RabbitMQ |
-| **Vector Engine** | Qdrant |
-| **Object Storage** | MinIO (S3-Compatible) |
-| **Observability** | Prometheus, Grafana, & ELK Stack |
-
----
-*This project is a practical implementation of the principles found in Alex Xu's "System Design Interview".*
+## Architecture (short)
+- **Backend** (`backend/`): FastAPI, SQLAlchemy 2 + Alembic, SQLite + sqlite-vec (vectors partitioned
+  by user). Agents are plain Python classes with typed tools and a traced tool-calling loop.
+  An in-process orchestrator runs DB-backed jobs and a scheduler tick (no broker).
+- **Frontend** (`frontend/`): React + Vite + TypeScript + Tailwind + TanStack Query, with Markdown
+  and KaTeX rendering.
+- **Docs**: `PLAN.md` (audit, keep/port/delete, layout), `DECISIONS.md` (trade-offs), `UX.md`
+  (screens and flows), `CHANGELOG.md` (milestones), `docs/DEVIN-PIVOT-AUDIT.md` (audit of the old code).
