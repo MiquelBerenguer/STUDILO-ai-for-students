@@ -6,7 +6,11 @@ for schema changes, no fake agentic UI). Product decisions are in `DECISIONS.md`
 the current system in `docs/SYSTEM_WALKTHROUGH.md` (v1) and `CHANGELOG.md` (v2+). The product name comes
 from `config/brand.json`; never hardcode it.
 
-Verify before you say you're done: `make test` (backend pytest + frontend typecheck/build) and
+Frontend tests: component tests use **Vitest + Testing Library + jsdom** (`frontend/src/**/*.test.tsx`,
+helper `src/test/render.tsx`, run with `npm test`); E2E uses **`@playwright/test`** with system Chrome
+(`channel: "chrome"`). These are already installed on `master`; don't add them again.
+
+Verify before you say you're done: `make test` (backend pytest + frontend typecheck, `npm test`, build) and
 `cd backend && uv run ruff check app tests`.
 
 ---

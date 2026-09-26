@@ -13,7 +13,7 @@ export BACKEND_PORT FRONTEND_PORT
 help:
 	@echo "make setup   - create .env (with APP_SECRET_KEY), install backend + frontend deps"
 	@echo "make dev     - validate config, run backend :$(BACKEND_PORT) and frontend :$(FRONTEND_PORT) (LAN-exposed)"
-	@echo "make test    - backend tests + frontend typecheck/build"
+	@echo "make test    - backend tests + frontend typecheck, component tests (vitest) and build"
 	@echo "make lint    - ruff + tsc"
 	@echo "make check   - validate .env + models.yaml without starting"
 
@@ -49,7 +49,7 @@ endif
 
 test:
 	cd $(BACKEND) && uv run pytest -q
-	cd $(FRONTEND) && npm run typecheck && npm run build
+	cd $(FRONTEND) && npm run typecheck && npm test && npm run build
 
 lint:
 	cd $(BACKEND) && uv run ruff check app tests
