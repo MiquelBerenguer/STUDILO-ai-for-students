@@ -251,3 +251,14 @@ def test_cards_and_actions_are_user_isolated(app) -> None:  # type: ignore[no-un
     assert b.post(f"/api/v1/actions/{act_id}/undo").status_code == 404
     assert _exam_date(a, ids["exam"]["id"]) == "2026-10-22"
     assert date.fromisoformat("2026-10-22")
+
+
+def test_ai_outage_gives_a_plain_language_failure_card(client, scripted) -> None:  # type: ignore[no-untyped-def]
+    onboard(client)
+    scripted.fail_models.update({"mid", "cheap", "strong", "vision", "vision-cheap"})  # every model down
+    _cmd(client, "what did we cover last week in Thermodynamics?")
+    drain()
+    [failed] = _cards(client, "job_failed")
+    assert "busy or unavailable" in failed["body"] and "HTTP 503" not in failed["body"]
+    runs = [r for r in client.get("/api/v1/activity/runs").json() if r["agent"] == "qa"]
+    assert runs and runs[0]["state"] == "failed"

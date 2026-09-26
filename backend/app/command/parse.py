@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Literal
 
-Intent = Literal["generate_exam", "ask_course", "change_exam_date", "open", "unknown"]
+Intent = Literal["generate_exam", "ask_course", "change_exam_date", "open", "status", "unknown"]
 
 
 def norm(text: str) -> str:
@@ -50,6 +50,9 @@ _MAKE = re.compile(r"\b(make|create|generate|build|give|prepare|write|crea|crear
                    r"prepara|preparame|dame|dona'm|donam)\b")
 _ASK = re.compile(r"^(what|whats|how|why|when|which|who|explain|summari[sz]e|summary|remind|did|do|does|is|are|can|"
                   r"que|qu[eé]|como|cuando|cual|explica|resume|resumen|quin|quina|com|quan|per que)\b")
+# "Are you connected to my Atenea tasks?", "is my calendar synced?": answered from Novi's own records (no AI).
+_STATUS = re.compile(r"\b(connected|connect|conectad[oa]|connectat|sync|synced|syncing|sincroniz\w*|linked|vinculad\w*|"
+                     r"atenea|moodle|calendar|calendari|calendario)\b")
 _OPEN = re.compile(r"\b(open|show|go to|take me to|abre|abrir|obre|obrir|mostra|ensenya|muestra|ver)\b")
 
 
@@ -196,6 +199,8 @@ def parse(text: str, today: date) -> Parsed:
     elif _MAKE.search(t) and _EXAM_WORD.search(t):
         p.intent, p.signals = "generate_exam", ["make-verb", "exam-word"]
         p.topic = parse_topic(t)
+    elif _STATUS.search(t) and (t.endswith("?") or _ASK.search(t) or re.search(r"\bstatus|estado|estat\b", t)):
+        p.intent, p.signals = "status", ["status-question"]
     elif _OPEN.search(t) and not t.endswith("?"):
         p.intent, p.signals = "open", ["open-verb"]
         p.route = next((r for rx, r in ROUTES if rx.search(t)), None)
@@ -214,11 +219,32 @@ STOP = {"exam", "the", "my", "on", "in", "to", "de", "del", "la", "el", "for", "
         "examen", "final", "midterm", "parcial", "test", "quiz", "practice", "hour", "h"}
 
 
+# Class-group markers timetables append to subject names: "MF(G)" (grup gran), "ELECTRI(P)" (pràctiques).
+GROUP_SUFFIX = re.compile(r"\s*\((G|P|T|L|GG|GP|GM|LAB|TEO|PRA|PRAC|TEORIA|PRACTIQUES)\)\s*$", re.I)
+_ROMAN = {"ii": "2", "iii": "3", "iv": "4", "v": "5", "vi": "6"}
+_INITIAL_STOP = {"de", "del", "la", "les", "els", "el", "i", "y", "e", "the", "of", "and", "a", "per", "para", "en"}
+
+
+def strip_group(name: str) -> str:
+    return GROUP_SUFFIX.sub("", name).strip()
+
+
+def _acronym_hit(acronym: str, query: str) -> bool:
+    """'mf' ~ 'MECÀNICA DE FLUIDS', 'i2' ~ 'INFORMÀTICA II': initials of consecutive content words."""
+    words = [w for w in _WORD.findall(norm(query)) if w not in _INITIAL_STOP]
+    initials = "".join(_ROMAN.get(w, w[0]) for w in words)
+    return len(acronym) >= 2 and acronym in initials
+
+
 def match_score(query: str, name: str) -> float:
-    """Token overlap with prefix matching ("thermo" ~ "thermodynamics", "fluids" ~ "fluid")."""
+    """Token overlap with prefix matching ("thermo" ~ "thermodynamics", "fluids" ~ "fluid"), plus acronyms
+    ("MF" ~ "Mecànica de Fluids") because timetables often use subject acronyms while Moodle uses full names."""
     q = [w for w in _tokens(query) if w not in STOP]
-    n = _tokens(name)
+    n = _tokens(strip_group(name))
     score = 0.0
+    bare = norm(strip_group(name)).replace(" ", "")
+    if re.fullmatch(r"[a-z]{1,6}\d?", bare) and _acronym_hit(bare, query):
+        score += 1.5
     for w in q:
         for x in n:
             if w == x:
@@ -236,4 +262,7 @@ def best_match(query: str, candidates: list[tuple[str, str]]) -> tuple[str | Non
     if not scored or scored[0][0] <= 0:
         return None, []
     top = [cid for s, cid in scored if s == scored[0][0]]
+    names = {cid: norm(strip_group(name)) for cid, name in candidates}
+    if len(top) > 1 and len({names[c] for c in top}) == 1:  # "ELECTRI(G)" vs "ELECTRI(P)": same subject
+        return next(cid for cid, _ in candidates if cid in top), []
     return (top[0], []) if len(top) == 1 else (None, top)

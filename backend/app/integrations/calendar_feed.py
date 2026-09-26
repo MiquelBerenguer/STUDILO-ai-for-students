@@ -158,7 +158,19 @@ async def sync(ctx: ToolContext, feed: CalendarFeed, tz: str) -> dict[str, Any]:
             a.due_date, a.due_at, a.title = day, due_at, d.title
             stats["updated"] += 1
     trace.step("decision", "calendar_synced", {}, {k: v for k, v in stats.items() if k != "unmatched_examples"})
+    first_sync = feed.last_synced_at is None
     feed.last_synced_at, feed.last_error, feed.stats = utcnow(), "", stats
+    if first_sync:  # make the connection visible: what was read, what was filed, what happens next
+        filed = stats["new"]
+        other = (f" {stats['unmatched']} event(s) aren't from your courses (e.g. “{stats['unmatched_examples'][0]}”), "
+                 "so I left them out." if stats["unmatched"] and stats["unmatched_examples"] else "")
+        cards.create_card(
+            ctx.db, "calendar_connected", f"Connected to your {feed.label} calendar",
+            body=(f"I read {len(deadlines)} dated event(s) and filed {filed} deadline/exam(s) from your subjects."
+                  f"{other} I'll re-check it every day and turn new deadlines from your subjects into cards; "
+                  "exam events become exams with Exam Pack reminders."),
+            actions=[cards.action("open", "See it in Schedule", "link", primary=True, href="/schedule"), cards.DISMISS],
+            data={"feed_id": feed.id}, dedupe_key=f"calendar_connected:{feed.id}", priority=46)
     cards.resolve_matching(ctx.db, ("job_failed",), feed_id=feed.id)
     summary = f"{stats['new']} new, {stats['updated']} updated" + (f", {stats['unmatched']} unmatched" if stats["unmatched"] else "")
     trace.finish("succeeded", summary)

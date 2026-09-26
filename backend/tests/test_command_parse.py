@@ -67,3 +67,17 @@ def test_fuzzy_matching() -> None:
     assert best_match("calculus", [("a", "Calculus I"), ("b", "Calculus II")]) == (None, ["b", "a"]) or \
         best_match("calculus", [("a", "Calculus I"), ("b", "Calculus II")])[0] is None
     assert best_match("banana", courses) == (None, [])
+
+
+def test_timetable_acronyms_match_moodle_full_names() -> None:
+    courses = [("mf", "MF(G)"), ("eg", "ELECTRI(G)"), ("ep", "ELECTRI(P)"), ("i2", "I2(P)")]
+    assert best_match("MECÀNICA DE FLUIDS (Curs T1) Pràctica 1 es tanca", courses) == ("mf", [])
+    assert best_match("INFORMÀTICA II lliurament", courses) == ("i2", [])
+    assert best_match("ELECTRICITAT Quiz 2 closes", courses) == ("eg", [])  # G/P groups of one subject
+    assert best_match("Assignatures del primer curs (1A i 1B) es tanca", courses) == (None, [])
+
+
+@pytest.mark.parametrize("text", ["are you connected to my atenea tasks?", "is my calendar synced?",
+                                  "estàs connectat a l'atenea?"])
+def test_status_questions_are_answered_without_ai(text: str) -> None:
+    assert parse(text, TODAY).intent == "status"

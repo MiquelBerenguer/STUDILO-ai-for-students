@@ -147,6 +147,9 @@ function Outcome({ result, asked, onResend }: { result: CommandResult; asked: st
       )}
       {result.outcome === "job" && result.job_id && <JobOutcome jobId={result.job_id} />}
       {result.outcome === "proposal" && result.card_id && <CardById id={result.card_id} />}
+      {result.outcome === "info" && result.route && (
+        <a href={result.route} className="chip">Open {result.route.replace("/", "")}</a>
+      )}
     </div>
   );
 }
@@ -159,8 +162,22 @@ function JobOutcome({ jobId }: { jobId: string }) {
     <div className="space-y-2">
       {[...runs].reverse().map((r) => <LiveRun key={r.id} run={r} />)}
       {runs.length === 0 && job?.state === "queued" && <p className="text-[0.74rem] text-muted">Queued — starting in a moment…</p>}
-      {job?.state === "failed" && <p className="text-[0.74rem] text-red-600">{job.error}</p>}
+      {job?.state === "failed" && <JobError error={job.error} />}
       {cardId && <CardById id={cardId} />}
+    </div>
+  );
+}
+
+function JobError({ error }: { error: string }) {
+  const [open, setOpen] = useState(false);
+  const aiDown = error.startsWith("LLMUnavailable");
+  return (
+    <div className="text-[0.74rem] text-red-600">
+      {aiDown ? "The AI models are busy or unavailable right now. Try again in a minute." : error.split("\n")[0].slice(0, 200)}
+      {aiDown && (
+        <button className="ml-2 font-semibold underline" onClick={() => setOpen(!open)}>{open ? "Hide details" : "Details"}</button>
+      )}
+      {open && <pre className="mt-1 whitespace-pre-wrap break-words text-[0.64rem] text-muted">{error}</pre>}
     </div>
   );
 }

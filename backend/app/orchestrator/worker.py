@@ -18,6 +18,7 @@ from app.db.base import utcnow
 from app.db.engine import scoped_session_for, system_session_ctx
 from app.db.models import Job, User
 from app.llm.client import get_llm
+from app.llm.types import LLMUnavailable
 from app.orchestrator import cards
 from app.orchestrator.handlers import HANDLERS
 from app.orchestrator.state_machines import JOB
@@ -75,7 +76,9 @@ async def run_job(job_id: str, user_id: str, now: datetime | None = None) -> str
             JOB.check(job.state, "failed")
             job.state, job.error, job.finished_at = "failed", f"{type(exc).__name__}: {exc}"[:4000], utcnow()
             if job.type in FAILURE_CARDS:
-                cards.create_card(db, "job_failed", FAILURE_CARDS[job.type], body=str(exc)[:400],
+                body = ("The AI models were busy or unavailable just now (details are in Activity). Retry in a minute."
+                        if isinstance(exc, LLMUnavailable) else str(exc)[:400])
+                cards.create_card(db, "job_failed", FAILURE_CARDS[job.type], body=body,
                                   actions=[cards.action("retry", "Retry", primary=True), cards.DISMISS],
                                   data={"job_id": job.id, "job_type": job.type}, dedupe_key=f"job_failed:{job.id}")
             db.commit()

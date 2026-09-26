@@ -24,6 +24,7 @@ from app.db.models import (
     AgentRun,
     AgentStep,
     Assignment,
+    CalendarFeed,
     ClassSession,
     ClassSlot,
     Course,
@@ -33,6 +34,7 @@ from app.db.models import (
     TriggerLog,
     User,
 )
+from app.integrations import calendar_feed
 from app.llm.client import get_llm
 from app.orchestrator import actions, cards
 from app.orchestrator.events import emit
@@ -90,7 +92,7 @@ class RunOut(BaseModel):
 
 class NextItem(BaseModel):
     at: datetime
-    kind: Literal["class_end", "check", "exam_pack"]
+    kind: Literal["class_end", "check", "exam_pack", "calendar"]
     text: str
 
 
@@ -199,6 +201,10 @@ def _next_items(db: DB, user: User, now: datetime) -> list[NextItem]:
                 items.append(NextItem(at=when, kind="exam_pack",
                                       text=f"I'll {'build' if t == 14 else 'refresh'} your {exam.title} Exam Pack (T-{t})"))
                 break
+    for feed in db.scalars(select(CalendarFeed)):
+        if feed.last_synced_at:
+            items.append(NextItem(at=max(feed.last_synced_at + calendar_feed.SYNC_EVERY, now), kind="calendar",
+                                  text=f"I'll re-check your {feed.label} calendar for new deadlines"))
     items.sort(key=lambda i: i.at)
     class_ends = [i for i in items if i.kind == "class_end"][:2]  # the next two are enough; the rest is the week
     return [i for i in items if i.kind != "class_end" or i in class_ends][:5]

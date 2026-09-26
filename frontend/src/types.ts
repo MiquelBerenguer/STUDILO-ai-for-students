@@ -389,7 +389,7 @@ export interface LiveRunT {
 
 export interface NextItem {
   at: string;
-  kind: "class_end" | "check" | "exam_pack";
+  kind: "class_end" | "check" | "exam_pack" | "calendar";
   text: string;
 }
 
@@ -425,7 +425,7 @@ export interface ActResult {
 export interface CommandResult {
   intent: string;
   method: "rules" | "llm" | "none";
-  outcome: "job" | "proposal" | "navigate" | "needs" | "help";
+  outcome: "job" | "proposal" | "navigate" | "needs" | "help" | "info";
   message: string;
   job_id: string | null;
   card_id: string | null;

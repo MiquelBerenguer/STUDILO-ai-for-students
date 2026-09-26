@@ -21,7 +21,7 @@ from app.orchestrator.state_machines import CARD, transition
 PRIORITY = {"approval": 90, "job_failed": 85, "upload_prompt": 80, "missed_class": 75, "account_claim": 70,
             "exam_date_needed": 65, "answer": 62, "catch_up_ready": 60, "exam_pack_ready": 58,
             "syllabus_wanted": 55, "past_exams_wanted": 52, "notes_filed": 45, "info": 40,
-            "deadline": 64, "connect_calendar": 47, "backfill_notes": 48}
+            "deadline": 64, "connect_calendar": 47, "backfill_notes": 48, "calendar_connected": 46}
 
 DISMISS = {"id": "dismiss", "label": "Dismiss", "type": "button"}
 

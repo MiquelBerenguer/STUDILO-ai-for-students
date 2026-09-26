@@ -54,6 +54,8 @@ def _raise_for(resp: httpx.Response, spec: ProviderSpec, model: str) -> None:
 
 # --------------------------------------------------------------------------- OpenAI-compatible
 class OpenAICompatAdapter:
+    _no_reasoning_with_tools: set[tuple[str, str]] = set()  # (provider, model) learned from a 400 at runtime
+
     def _headers(self, key: str | None) -> dict[str, str]:
         return {"Authorization": f"Bearer {key}"} if key else {}
 
@@ -98,10 +100,20 @@ class OpenAICompatAdapter:
             body["max_completion_tokens" if spec.name == "openai" else "max_tokens"] = max_tokens
         if temperature is not None:
             body["temperature"] = temperature
+        if tools and (spec.name, model) in self._no_reasoning_with_tools:
+            body["reasoning_effort"] = "none"
         t0 = time.monotonic()
         try:
             async with httpx.AsyncClient(timeout=TIMEOUT) as client:
                 resp = await client.post(f"{spec.base_url}/chat/completions", json=body, headers=self._headers(key))
+                # Newer OpenAI reasoning models refuse function tools on chat/completions unless reasoning is off.
+                # Retry once with reasoning_effort="none" and remember the model (older models reject the param).
+                if (resp.status_code == 400 and tools and "reasoning_effort" not in body
+                        and "reasoning_effort" in resp.text):
+                    self._no_reasoning_with_tools.add((spec.name, model))
+                    body["reasoning_effort"] = "none"
+                    resp = await client.post(f"{spec.base_url}/chat/completions", json=body,
+                                             headers=self._headers(key))
         except httpx.HTTPError as exc:
             raise LLMError(spec.name, model, f"network error: {type(exc).__name__}: {exc}") from exc
         _raise_for(resp, spec, model)

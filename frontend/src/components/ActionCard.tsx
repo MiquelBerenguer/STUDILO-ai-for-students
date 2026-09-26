@@ -26,6 +26,7 @@ const KIND: Record<string, { label: string; icon: IconName; tone: string }> = {
   backfill_notes: { label: "Catch up", icon: "upload", tone: "bg-primary-soft text-primary" },
   deadline: { label: "Deadline", icon: "clock", tone: "bg-warm-soft text-[#d57d37]" },
   connect_calendar: { label: "Connect", icon: "link", tone: "bg-blue-soft text-[#4a78cf]" },
+  calendar_connected: { label: "Connected", icon: "check", tone: "bg-success-soft text-success" },
   info: { label: "Update", icon: "spark", tone: "bg-canvas text-muted" },
 };
 

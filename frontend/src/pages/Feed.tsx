@@ -85,7 +85,7 @@ export default function Feed() {
                 {feed.next.map((n, i) => (
                   <li key={i} className="flex gap-3">
                     <span className={`grid h-8 w-8 flex-none place-items-center rounded-lg ${n.kind === "exam_pack" ? "bg-primary-soft text-primary" : n.kind === "check" ? "bg-warm-soft text-[#d57d37]" : "bg-blue-soft text-[#4a78cf]"}`}>
-                      <Icon name={n.kind === "exam_pack" ? "exam" : n.kind === "check" ? "clock" : "calendar"} className="h-4 w-4" />
+                      <Icon name={n.kind === "exam_pack" ? "exam" : n.kind === "check" ? "clock" : n.kind === "calendar" ? "link" : "calendar"} className="h-4 w-4" />
                     </span>
                     <span>
                       <span className="eyebrow block">{clock(n.at)}</span>

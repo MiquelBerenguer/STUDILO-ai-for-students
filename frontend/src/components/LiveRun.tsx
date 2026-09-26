@@ -29,7 +29,7 @@ export function LiveRun({ run, defaultOpen, compact }: { run: LiveRunT; defaultO
   });
   const steps = run.steps.length ? run.steps : detail?.steps ?? [];
   const visible = open ? steps : steps.slice(-1);
-  const noAi = run.llm_calls === 0;
+  const noAi = run.llm_calls === 0 && run.state === "succeeded"; // a failed run may have tried AI and failed
 
   async function undo() {
     try {
@@ -59,9 +59,11 @@ export function LiveRun({ run, defaultOpen, compact }: { run: LiveRunT; defaultO
         </span>
         <span className="flex flex-none items-center gap-2 text-[0.62rem] font-semibold text-muted">
           <span>{elapsed(run)}</span>
-          <span className={`rounded-full px-2 py-0.5 ${noAi ? "bg-success-soft text-success" : "bg-canvas"}`}>
-            {noAi ? "no AI" : `${run.llm_calls} AI call${run.llm_calls > 1 ? "s" : ""} · ${usd(run.cost_usd)}`}
-          </span>
+          {(noAi || run.llm_calls > 0) && (
+            <span className={`rounded-full px-2 py-0.5 ${noAi ? "bg-success-soft text-success" : "bg-canvas"}`}>
+              {noAi ? "no AI" : `${run.llm_calls} AI call${run.llm_calls > 1 ? "s" : ""} · ${usd(run.cost_usd)}`}
+            </span>
+          )}
           <Icon name="chevron" className={`h-3.5 w-3.5 transition ${open ? "rotate-180" : ""}`} />
         </span>
       </button>

@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.command.parse import DateRange, Parsed, best_match, norm, parse, parse_date
-from app.db.models import Course, Event, Exam, Topic
+from app.db.models import Assignment, CalendarFeed, Course, Event, Exam, Topic
 from app.llm.client import LLMClient
 from app.llm.types import CallContext, LLMUnavailable
 from app.orchestrator import actions
@@ -27,7 +27,7 @@ HELP = ["make me a 1h exam on entropy", "what did we cover last week in Fluids?"
 class IntentGuess(BaseModel):
     """Closed-form output for the LLM fallback. No free-form structure is accepted."""
 
-    intent: Literal["generate_exam", "ask_course", "change_exam_date", "open", "unknown"]
+    intent: Literal["generate_exam", "ask_course", "change_exam_date", "open", "status", "unknown"]
     course: str | None = Field(default=None, max_length=120, description="course or exam name as written")
     topic: str | None = Field(default=None, max_length=120)
     date: str | None = Field(default=None, description="ISO date YYYY-MM-DD if the user gave one")
@@ -37,7 +37,7 @@ class IntentGuess(BaseModel):
 class CommandResult(BaseModel):
     intent: str
     method: Literal["rules", "llm", "none"]
-    outcome: Literal["job", "proposal", "navigate", "needs", "help"]
+    outcome: Literal["job", "proposal", "navigate", "needs", "help", "info"]
     message: str
     job_id: str | None = None
     card_id: str | None = None
@@ -124,6 +124,30 @@ def _choices(courses: list[Course]) -> list[dict[str, str]]:
     return [{"id": c.id, "label": c.name} for c in courses]
 
 
+def _status(db: Session, today: date) -> str:
+    """What Novi is connected to and what it does with it, straight from the database."""
+    feeds = list(db.scalars(select(CalendarFeed).order_by(CalendarFeed.created_at)))
+    upcoming = list(db.scalars(select(Assignment).where(Assignment.done.is_(False), Assignment.due_date >= today)))
+    if not feeds:
+        return ("No calendar is connected yet. Paste your Atenea calendar link in Schedule → Connected calendars "
+                "and I'll turn its deadlines into cards, re-checking every day.")
+    parts = []
+    for f in feeds:
+        st = f.stats or {}
+        when = f.last_synced_at.strftime("%d %b %H:%M") + " UTC" if f.last_synced_at else "not yet"
+        line = f"Yes — {f.label} is connected (last checked {when})."
+        if f.last_error:
+            line += f" The last check failed: {f.last_error}"
+        else:
+            line += (f" Last check: {st.get('new', 0)} new, {st.get('updated', 0)} updated"
+                     + (f", {st['unmatched']} event(s) not from your courses (e.g. {st['unmatched_examples'][0]})"
+                        if st.get("unmatched") and st.get("unmatched_examples") else "") + ".")
+        parts.append(line)
+    parts.append(f"You have {len(upcoming)} open deadline(s) from it. I re-check every day and turn new deadlines "
+                 "from your subjects into cards; exam events become exams with Exam Pack reminders.")
+    return " ".join(parts)
+
+
 def _dispatch(db: Session, p: Parsed, today: date) -> CommandResult:
     if p.intent == "generate_exam":
         course, options = _resolve_course(db, p.text, p.topic)
@@ -170,6 +194,9 @@ def _dispatch(db: Session, p: Parsed, today: date) -> CommandResult:
         _, card = actions.propose_exam_date(db, exam, courses[exam.course_id], p.date, p.text)
         return CommandResult(intent=p.intent, method="rules", outcome="proposal", card_id=card.id,
                              message=f"Move {exam.title} to {p.date:%A %d %b}? Approve it in the card.")
+    if p.intent == "status":
+        return CommandResult(intent=p.intent, method="rules", outcome="info", message=_status(db, today),
+                             route="/schedule")
     if p.intent == "open":
         route = p.route
         if route is None:

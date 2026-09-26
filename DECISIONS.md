@@ -264,6 +264,18 @@ Redirects are followed only within upc.edu. The contents section is cut determin
 Catalan/Spanish/English headings, with workload lines removed. No LLM is involved: the guide is
 already structured text, and a model would add cost and hallucination risk for no gain.
 
+## D-37 — Acronym-aware matching; timetable group suffixes merge into one course
+Timetables (e.g. SIA) name subjects by acronym plus group, `MF(G)`, while Moodle uses full names,
+"MECÀNICA DE FLUIDS". The matcher strips group markers and scores an acronym hit when the initials of
+consecutive content words contain the acronym. Stopwords are skipped and roman numerals map to digits,
+so II → 2. Ties between groups of the same subject resolve to one course. At onboarding confirm,
+`X(G)` and `X(P)` become one course `X`, with the group kept on each slot's location.
+
+## D-38 — OpenAI tools + reasoning: retry with `reasoning_effort="none"`, learned per model
+Always sending `reasoning_effort` would break models that don't accept it, and never sending it breaks
+newer reasoning models when tools are used. The adapter retries once on that specific 400 and caches the
+(provider, model) pair for the process lifetime.
+
 ## D-34 — UI screenshots with Playwright + system Chrome, as a dev-only script
 `scripts/ui_screens.py` walks the before/after flows and measures landing → feed time. It runs through
 `uv run --no-project --with playwright`, so Playwright is not a product dependency. It uses

@@ -1,5 +1,26 @@
 # Changelog
 
+## v2.2 — Calendar visibility, acronym matching, OpenAI tool-call fix (2026-09-26)
+- **Verified with a real Atenea account.** Calendar export works for students (the menu item is hidden,
+  but the Moodle calendar pages exist).
+- **Connection is visible:**
+  - the first sync posts a "Connected to your … calendar" card (what was read, what was filed, what
+    happens next);
+  - "Next up" shows the next daily check;
+  - Schedule → Connected calendars shows the status.
+- **New `status` command intent**, deterministic with no AI ("are you connected to my atenea tasks?",
+  EN/ES/CA). Previously such questions went to the paid Q&A agent.
+- **Subject matching understands timetable acronyms:** `MF(G)` ~ "MECÀNICA DE FLUIDS",
+  `I2(P)` ~ "INFORMÀTICA II". Group suffixes (G)/(P)/… become one course with the group noted on each
+  slot.
+- **Fix:** OpenAI reasoning models (e.g. `gpt-5.6-luna`) reject function tools on `chat/completions`
+  unless `reasoning_effort="none"`. The adapter retries once with it and remembers the model. This broke
+  every tool-calling agent on the OpenAI fallback (and the Exam agent, whose primary model is OpenAI).
+- **Honest failure UI:**
+  - an AI outage shows "busy or unavailable, retry", with details on demand;
+  - the "no AI" badge only appears on runs that succeeded without AI.
+- 116 backend tests.
+
 ## v2.1 — First UPC integrations: connected calendar + course guides (2026-09-26)
 These are the two items marked **GO** in `docs/research/UPC_INTEGRATION.md`. Neither needs a password
 or an agreement with UPC.

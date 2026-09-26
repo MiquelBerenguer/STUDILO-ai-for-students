@@ -10,7 +10,7 @@ from app.agents.base import ToolContext
 from app.api.deps import DB, CurrentUser
 from app.api.schemas import CourseOut
 from app.auth.ratelimit import RateLimiter
-from app.command.parse import best_match
+from app.command.parse import GROUP_SUFFIX, best_match, strip_group
 from app.config.settings import get_settings
 from app.db.base import utcnow
 from app.db.engine import system_session_ctx
@@ -70,10 +70,14 @@ def confirm(body: ConfirmIn, user: CurrentUser, db: DB) -> ConfirmOut:
     touched: dict[str, Course] = {}
     created_slots = 0
     for s in body.slots:
-        key = norm(s.subject)
+        # "ELECTRI(G)" and "ELECTRI(P)" are the theory and lab groups of one subject: one course, two slots.
+        marker = GROUP_SUFFIX.search(s.subject)
+        name = strip_group(s.subject) or s.subject
+        room = f"({marker.group(1).upper()}) {s.room}".strip() if marker else s.room
+        key = norm(name)
         course = by_name.get(key)
         if course is None:
-            course = Course(name=s.subject.strip()[:120], color=PALETTE[len(by_name) % len(PALETTE)],
+            course = Course(name=name.strip()[:120], color=PALETTE[len(by_name) % len(PALETTE)],
                             professor=s.professor)
             db.add(course)
             db.flush()
@@ -85,7 +89,7 @@ def confirm(body: ConfirmIn, user: CurrentUser, db: DB) -> ConfirmOut:
                                                       ClassSlot.start_time == s.start, ClassSlot.end_time == s.end))
         if not exists:
             db.add(ClassSlot(course_id=course.id, weekday=s.weekday, start_time=s.start, end_time=s.end,
-                             location=s.room))
+                             location=room))
             created_slots += 1
     exams = 0
     all_courses = list(by_name.values())

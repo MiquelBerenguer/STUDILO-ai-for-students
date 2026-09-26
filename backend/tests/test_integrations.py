@@ -179,3 +179,32 @@ def test_syllabus_card_can_fetch_the_guide(client, guides) -> None:  # type: ign
     r = client.post(f"/api/v1/cards/{card['id']}/act", json={"action": "fetch_guide", "value": "300021"})
     assert r.status_code == 200 and "syllabus" in r.json()["message"]
     assert "Second law" in client.get(f"/api/v1/courses/{ids['fluids']['id']}").json()["syllabus"]
+
+
+def test_first_sync_is_visible_and_status_is_answered_from_records(client, calendar) -> None:  # type: ignore[no-untyped-def]
+    onboard(client)
+    assert "No calendar is connected" in client.post("/api/v1/command", json={"text": "is my calendar synced?"}).json()["message"]
+    _connect(client)
+    drain()
+    [card] = _cards(client, "calendar_connected")
+    assert "filed 3" in card["body"] and "Essay is due" in card["body"]
+    feed = client.get("/api/v1/feed").json()
+    assert any(n["kind"] == "calendar" for n in feed["next"])  # "I'll re-check your … calendar"
+    res = client.post("/api/v1/command", json={"text": "are you connected to my atenea tasks?"}).json()
+    assert res["intent"] == "status" and res["method"] == "rules" and res["outcome"] == "info"
+    assert res["message"].startswith("Yes — Atenea is connected") and "2 open deadline(s)" in res["message"]
+    assert llm_calls(client) == []  # no AI anywhere in this flow
+    drain()
+    assert len(_cards(client, "calendar_connected")) == 1  # only once
+
+
+def test_group_suffixes_become_one_course(app) -> None:  # type: ignore[no-untyped-def]
+    c = make_client(app)
+    c.post("/api/v1/auth/guest", json={"timezone": "Europe/Madrid"})
+    slots = [{"subject": "ELECTRI(G)", "weekday": 0, "start": "08:00", "end": "10:00", "room": "Aula 3"},
+             {"subject": "ELECTRI(P)", "weekday": 2, "start": "10:00", "end": "12:00", "room": "Lab 1"},
+             {"subject": "MF(G)", "weekday": 1, "start": "08:00", "end": "10:00", "room": ""}]
+    out = c.post("/api/v1/onboarding/confirm", json={"slots": slots}).json()
+    assert sorted(x["name"] for x in out["courses"]) == ["ELECTRI", "MF"] and out["slots_created"] == 3
+    rooms = sorted(s["location"] for s in c.get("/api/v1/slots").json())
+    assert rooms == ["(G)", "(G) Aula 3", "(P) Lab 1"]
