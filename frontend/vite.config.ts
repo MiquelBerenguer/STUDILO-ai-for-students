@@ -25,6 +25,8 @@ function brandHtml(): Plugin {
 // `npm run dev -- --host` exposes it on the LAN for phone uploads.
 export default defineConfig({
   plugins: [react(), tailwindcss(), brandHtml()],
+  // Per-checkout cache: view worktrees share node_modules (a link), so the default node_modules/.vite would clash.
+  cacheDir: path.resolve(__dirname, ".vite-cache"),
   build: { chunkSizeWarningLimit: 1200 },
   server: {
     port: frontendPort,

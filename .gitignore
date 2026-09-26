@@ -14,6 +14,7 @@ __pycache__/
 # Node
 node_modules
 frontend/dist/
+frontend/.vite-cache/
 *.tsbuildinfo
 
 # Per-worktree local settings (ports)
