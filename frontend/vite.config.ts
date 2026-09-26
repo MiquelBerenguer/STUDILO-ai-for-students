@@ -6,6 +6,9 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 
 const brandFile = path.resolve(__dirname, "../config/brand.json");
+// Ports come from the Makefile (per-worktree .worktree.mk), so parallel worktrees don't collide.
+const backend = `http://127.0.0.1:${process.env.BACKEND_PORT ?? "8000"}`;
+const frontendPort = Number(process.env.FRONTEND_PORT ?? 5173);
 
 // Injects the product name from config/brand.json into index.html (%BRAND_NAME%, %BRAND_TAGLINE%).
 function brandHtml(): Plugin {
@@ -24,9 +27,9 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), brandHtml()],
   build: { chunkSizeWarningLimit: 1200 },
   server: {
-    port: 5173,
+    port: frontendPort,
     fs: { allow: [__dirname, path.dirname(brandFile)] },
-    proxy: { "/api": { target: "http://127.0.0.1:8000", changeOrigin: false } },
+    proxy: { "/api": { target: backend, changeOrigin: false } },
   },
-  preview: { proxy: { "/api": { target: "http://127.0.0.1:8000" } } },
+  preview: { proxy: { "/api": { target: backend } } },
 });

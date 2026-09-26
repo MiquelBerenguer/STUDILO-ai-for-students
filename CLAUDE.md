@@ -18,6 +18,10 @@ cd backend && uv run alembic revision --autogenerate -m "msg"   # schema change 
 cd backend && uv run python -m app.startup       # validate .env + models.yaml
 ```
 
+## Parallel worktrees
+Novi is built by several agents at once, one view per worktree. **Read `AGENTS.md`** for which files
+your view owns, the shared-file rules (reserved migration ids, append-only files) and your dev ports.
+
 ## Where things live (v2)
 - Product name/tagline: `config/brand.json` only (D-20). Feature flags for UI stubs: `config/features.json`.
 - Feed cards: `app/orchestrator/cards.py` (create only from triggers/jobs). Undo/approval:

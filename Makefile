@@ -2,10 +2,15 @@
 
 BACKEND := backend
 FRONTEND := frontend
+# Per-worktree overrides (gitignored), e.g. "BACKEND_PORT := 8003" so parallel worktrees can all run `make dev`.
+-include .worktree.mk
+BACKEND_PORT ?= 8000
+FRONTEND_PORT ?= 5173
+export BACKEND_PORT FRONTEND_PORT
 
 help:
 	@echo "make setup   - create .env (with APP_SECRET_KEY), install backend + frontend deps"
-	@echo "make dev     - validate config, run backend :8000 and frontend :5173 (LAN-exposed)"
+	@echo "make dev     - validate config, run backend :$(BACKEND_PORT) and frontend :$(FRONTEND_PORT) (LAN-exposed)"
 	@echo "make test    - backend tests + frontend typecheck/build"
 	@echo "make lint    - ruff + tsc"
 	@echo "make check   - validate .env + models.yaml without starting"
@@ -22,10 +27,10 @@ check:
 	cd $(BACKEND) && uv run python -m app.startup
 
 dev: setup check
-	@echo "Backend http://localhost:8000  ·  Frontend http://localhost:5173"
+	@echo "Backend http://localhost:$(BACKEND_PORT)  ·  Frontend http://localhost:$(FRONTEND_PORT)"
 	@trap 'kill 0' INT TERM EXIT; \
-	  (cd $(BACKEND) && uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --reload-dir app) & \
-	  (cd $(FRONTEND) && npm run dev -- --host) & \
+	  (cd $(BACKEND) && uv run uvicorn app.main:app --host 127.0.0.1 --port $(BACKEND_PORT) --reload --reload-dir app) & \
+	  (cd $(FRONTEND) && npm run dev -- --host --port $(FRONTEND_PORT) --strictPort) & \
 	  wait
 
 test:

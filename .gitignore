@@ -16,6 +16,9 @@ node_modules/
 frontend/dist/
 *.tsbuildinfo
 
+# Per-worktree local settings (ports)
+.worktree.mk
+
 # Local data (database, uploads, model cache)
 data/
 
