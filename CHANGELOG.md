@@ -1,5 +1,47 @@
 # Changelog
 
+## v2 — Novi: agentic feed, 3-step onboarding, rename (2026-09-26)
+- **Rename to Novi** from one constant, `config/brand.json`, shared by backend and frontend. Internal
+  identifiers are brand-neutral (D-20).
+- **Novi feed is the home screen**:
+  - **Needs you**: action cards with one-tap actions and inline inputs.
+  - **Working now**: live agent runs with plain-language steps (`app/agents/describe.py`), expandable
+    to the full trace.
+  - **Since you were away**: runs finished since the last visit.
+  - **Next up**: planned work computed from real schedules and exam thresholds.
+  - Visual language from the design reference (`design/reference/`).
+- **Cards** (`app/orchestrator/cards.py`), created only by triggers and jobs:
+  - class-end upload prompt, missed class with "Catch me up" (new `catch_up` job), notes filed, Exam
+    Pack refreshed;
+  - progressive questions: exam date after a subject's first class, past exams, syllabus, backfill;
+  - approval, answer, job failed with Retry, account claim.
+- **Autonomy with control** (`app/orchestrator/actions.py`, table `agent_actions`):
+  - autonomous changes record a snapshot and get a real 7-day Undo (notes filing, pack builds);
+  - Undo is refused when later work depends on the change;
+  - high-impact changes (exam date) are proposals that change nothing until approved.
+- **Command bar** (hero + ⌘K):
+  - deterministic parser first (EN/ES/CA dates, durations, fuzzy course matching), then a typed JEV
+    fallback;
+  - intents: generate exam (focus + duration), ask about course content (new **Q&A agent**,
+    `course_qa` task), change exam date (approval), open.
+- **Onboarding in 3 steps, no registration wall**:
+  - a guest session is created when the timetable is dropped, and the account is claimed later from
+    a card;
+  - timetables are read from a screenshot, photo, PDF, `.ics` file or link, or pasted text:
+    deterministic first (grid parser over PDF text or local OCR boxes, `.ics`, line regex), then the
+    cheap vision model (`timetable_extraction`), then typed validation;
+  - an editable week preview highlights low-confidence fields.
+- Migrations `0002` (cards, agent actions, guest users, last-seen) and `0003` (course professor).
+- **Research**: `docs/research/UPC_INTEGRATION.md` (go for calendar link + public guides; no-go for
+  automatic Atenea login without a UPC agreement).
+- **Verified**:
+  - 98 backend tests, lint clean, frontend typecheck and build;
+  - the 3-step E2E test (fresh user → feed, < 60 s);
+  - the real UI took 2.3–2.5 s from landing to the Novi feed with a timetable screenshot, measured by
+    `scripts/ui_screens.py`;
+  - the new LLM paths (Q&A, catch-up, vision timetable fallback, focused exams) ran only against the
+    scripted test provider, not a paid model.
+
 ## M6 — Activity/Costs, Settings, polish, verification (2026-09-24)
 - Activity screen: cost/LLM-call/deterministic-step summary, cost by task, calls by model, ingestion
   paths, agent runs with full step traces, LLM call log (fallbacks, failures, unpriced models).

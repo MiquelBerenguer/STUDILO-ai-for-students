@@ -144,3 +144,111 @@ meaningful check. Any hit now means real placeholder data.
 ## D-21 — The design reference is committed
 `design/reference/` (Figma Make export, ~190 KB without `node_modules`) is small, so it is committed for
 future comparison; its `node_modules/` is gitignored. It is reference material only: nothing imports it.
+
+## D-22 — Feed cards reuse the `notifications` table
+A card is a notification with typed actions, a status and a priority. One table serves both the feed
+and the bell, so no two sources can disagree. Migration 0002 adds `status`, `actions`, `priority`,
+`dedupe_key` (unique per user: a question is never asked twice), `action_id` and `course_id`. v1 rows
+migrate as `open`/`done` from `read_at`.
+
+## D-23 — Undo = per-job effect snapshots, not event sourcing
+- Autonomous jobs record what they changed in `agent_actions.effects`:
+  - sections created;
+  - sections revised, with their previous heading, content and version;
+  - topics created;
+  - dependencies created;
+  - the class-session and course-memory snapshot taken before the upload.
+- Undo applies the inverse and marks the upload `undone`.
+- Undo is **refused** (HTTP 409, with the reason) when later work depends on the change, e.g. a section
+  created by the upload was revised again. Silently clobbering later work would be worse than saying no.
+- The window is 7 days.
+- Discarded alternative: full event sourcing (every write replayable). Much larger change, and not needed
+  for "undo the last autonomous thing".
+
+## D-24 — Approval only for Novi-initiated, high-impact actions
+The policy is fixed in code (`actions.AUTONOMY_POLICY`), shown read-only in the feed:
+- **Auto:** filing notes, course memory, missed-class flags, pack refreshes.
+- **Asks first:** exam date/scope changes, deletion.
+
+Deletions the student does themselves in secondary views stay direct: they are the student's own
+action, not Novi's. The reference's "Autonomy mode" toggle is not implemented, because a toggle
+without behaviour would be fake (flag `autonomy_toggle`, UX §10).
+
+## D-25 — Live runs by 1 s polling, not SSE/WebSockets
+`AgentTrace` already commits after every step. The feed polls every 1 s only while a run is `running`
+(5 s otherwise); a job's runs poll until no run is active. With sync SQLite and a threaded worker, SSE
+would add a fan-out layer for no visible difference at this scale. Revisit if many concurrent users.
+
+## D-26 — Command bar: deterministic parser first, closed-intent JEV fallback, no chat
+- Intents, dates (EN/ES/CA), durations and fuzzy course/exam matching are parsed with rules
+  (`app/command/parse.py`, unit-tested).
+- Only when no rule matches, the cheap model answers a closed question: an `IntentGuess` with a
+  `Literal` intent and typed slots, one retry.
+- Missing slots produce clarification chips instead of guesses.
+- Every command is stored as an `Event(type="command")`.
+- Results render as cards and live runs, not as a transcript.
+- The reference's canned-reply chat was removed on purpose.
+
+## D-27 — Guest users instead of pre-account storage
+Onboarding step 1 creates a real user with `email = NULL`:
+- scoping, cost logging and traces work unchanged;
+- the account is claimed later (`POST /auth/claim`, same user id, data kept);
+- guest creation is rate-limited per IP (20/h) and extraction per user (30/h), in memory
+  (single-process, local-first);
+- logging out as a guest warns that data would be lost.
+
+Discarded alternative: holding the extraction client-side until registration. That makes LLM calls
+unattributable (cost log needs a user) and loses work on reload.
+
+## D-28 — Timetable extraction runs inside the request, traced as the `onboarding` agent
+Time-to-first-value matters more than uniformity with the job queue:
+- the grid path takes ~1–3 s (local OCR); vision takes ~5–10 s;
+- the request returns the preview directly;
+- the UI polls `/runs/live` meanwhile to stream the agent's steps.
+
+If extraction ever becomes slow, it can move to a job without UI changes.
+
+## D-29 — Grid parser: coloured blocks first, text clusters as fallback, escalate below 0.75
+- Tokens come from the PDF text layer (exact) or RapidOCR boxes.
+- The parser finds:
+  - the weekday header row (EN/ES/CA names, ≥2 in order);
+  - columns (midpoints between headers);
+  - time labels left of the grid, forming a y→time mapping. Two hypotheses (labels on row lines vs
+    centred in rows) are tested against the block edges.
+- Cells come from saturated colour blocks (OpenCV). Otherwise vertical text clusters are used, with
+  lower time confidence.
+- Confidence combines token coverage, header and label counts, overlaps and unreadable cells. Below
+  `GRID_ACCEPT = 0.75` the cheap vision task `timetable_extraction` runs.
+- The angled phone photo fixture intentionally escalates: perspective breaks column geometry, and
+  that is exactly the case vision is for.
+- Pure functions in `app/onboarding/timetable.py`.
+
+## D-30 — New model tasks: `course_qa`, `timetable_extraction`; the catch-up reuses `course_memory`
+- `course_qa` (Q&A agent) uses the mid model like `course_memory`.
+- `timetable_extraction` uses the cheapest vision model with a fallback.
+- The missed-class catch-up is one structured call on `course_memory`: same context, same cost class.
+- All three are in `models.yaml`, so swapping them is one line.
+
+## D-31 — Progressive disclosure replaces onboarding fields
+Onboarding no longer asks for semester dates, exams or syllabus; the Planner already treats missing
+semester dates as unbounded. Instead, cards ask at the moment they matter:
+- exam date → after the subject's first `class_ended`;
+- past exams → when an exam is created;
+- syllabus → after the first notes are filed;
+- backfill notes → at confirm.
+
+`/me/complete-onboarding` (v1) still exists; the new path is `/onboarding/confirm`.
+
+## D-32 — Stubs behind `config/features.json`
+Shared by both sides like the brand file (`GET /meta`). The reference's "Novi learned" card, readiness
+ring and autonomy toggle have no backend, so their flags default to `false` and nothing renders.
+
+## D-33 — v1 screens restyled by remapping Tailwind scales onto the reference palette
+The reference tokens are added as-is in `@theme`. Tailwind's `indigo-*` and `slate-*` scales are
+remapped to the reference primary/ink/muted/line colours. Subject, Exam Pack, Activity and Settings
+adopt the look without rewrites. New screens use the tokens directly.
+
+## D-34 — UI screenshots with Playwright + system Chrome, as a dev-only script
+`scripts/ui_screens.py` walks the before/after flows and measures landing → feed time. It runs through
+`uv run --no-project --with playwright`, so Playwright is not a product dependency. It uses
+`channel="chrome"` to avoid downloading browsers.

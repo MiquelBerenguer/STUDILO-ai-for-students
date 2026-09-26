@@ -4,16 +4,21 @@
 > change it there. Formerly called Studilo.
 
 A local-first, multi-agent study assistant for engineering students. Novi works like a second
-student who follows the course with you:
+student who does the organising and asks for your approval:
 
-1. You set up your subjects, weekly schedule, semester and exam dates.
-2. When a class ends, Novi asks for that class's notes (in-app inbox and browser notification).
-3. You upload a PDF, phone photos, scans or typed text. A **deterministic-first router** reads them
-   (text layer → local OCR → vision model only when needed).
-4. Agents merge the content into structured **topic notes** (every section links to its source) and
-   keep a living **course memory**: sessions, pace, topic dependencies, missed classes, open doubts.
-5. At T-14, T-7 and T-3 days before each exam, the Exam agent builds an **Exam Pack**: a study guide
-   and several verified practice exams with solutions and rubrics, all citing your notes.
+1. **Drop your timetable** (screenshot, photo, PDF, `.ics` link or pasted text). Novi reads it (no AI
+   when the grid is clear), you confirm the week with one tap, and you land on the Novi feed. There is
+   no registration wall: save the account later.
+2. When a class ends, a card asks for that class's notes. Exam dates, past exams and the syllabus are
+   asked for later, when they become relevant.
+3. Uploads go through a **deterministic-first router** (text layer → local OCR → vision model only when
+   needed). Agents file the content into **topic notes** with sources and keep a **course memory**.
+   You can watch every step live and undo anything Novi did on its own.
+4. At T-14, T-7 and T-3 days before each exam, the Exam agent builds an **Exam Pack**: a study guide and
+   verified practice exams citing your notes.
+5. The **command bar** (⌘K) handles requests like "make me a 1h exam on entropy", "what did we cover
+   last week in Fluids?" and "move my Thermo exam to the 15th". High-impact changes wait for your
+   approval.
 
 ## Quick start
 Requirements: [uv](https://docs.astral.sh/uv/) and Node.js ≥ 20. uv installs Python 3.12 itself.
@@ -22,7 +27,7 @@ Requirements: [uv](https://docs.astral.sh/uv/) and Node.js ≥ 20. uv installs P
 cp .env.example .env        # fill in the provider keys referenced by backend/config/models.yaml
 make dev                    # installs deps, validates config, starts backend :8000 + frontend :5173
 ```
-Open http://localhost:5173 and register. From a phone on the same Wi-Fi, open the LAN URL shown on
+Open http://localhost:5173 and drop your timetable. From a phone on the same Wi-Fi, open the LAN URL shown on
 the Upload screen.
 
 - `make test`: backend tests (pytest) + frontend typecheck and build.
@@ -33,7 +38,8 @@ the Upload screen.
 ## Configuration
 - **Secrets**: `.env` only (gitignored). See `.env.example` for every key.
 - **Models**: `backend/config/models.yaml` maps each task (`jev_classification`, `vision_transcribe`,
-  `notes_structuring`, `course_memory`, `exam_generation`, `exam_verification`, `embeddings`) to a
+  `notes_structuring`, `course_memory`, `exam_generation`, `exam_verification`, `course_qa`,
+  `timetable_extraction`, `embeddings`) to a
   provider/model with a fallback chain, plus per-model pricing for the cost log. Edit one line, or use
   Settings → Models, to switch a model. The file is hot-reloaded, so no restart is needed.
 - Supported providers: `anthropic`, `openai`, `google`, `deepseek`, `openrouter`, `ollama` (local),
@@ -45,5 +51,5 @@ the Upload screen.
   An in-process orchestrator runs DB-backed jobs and a scheduler tick (no broker).
 - **Frontend** (`frontend/`): React + Vite + TypeScript + Tailwind + TanStack Query, with Markdown
   and KaTeX rendering.
-- **Docs**: `PLAN.md` (audit, keep/port/delete, layout), `DECISIONS.md` (trade-offs), `UX.md`
+- **Docs**: `docs/research/UPC_INTEGRATION.md` (university integration research), `PLAN.md` (audit, keep/port/delete, layout), `DECISIONS.md` (trade-offs), `UX.md`
   (screens and flows), `CHANGELOG.md` (milestones), `docs/DEVIN-PIVOT-AUDIT.md` (audit of the old code).

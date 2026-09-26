@@ -18,6 +18,15 @@ cd backend && uv run alembic revision --autogenerate -m "msg"   # schema change 
 cd backend && uv run python -m app.startup       # validate .env + models.yaml
 ```
 
+## Where things live (v2)
+- Product name/tagline: `config/brand.json` only (D-20). Feature flags for UI stubs: `config/features.json`.
+- Feed cards: `app/orchestrator/cards.py` (create only from triggers/jobs). Undo/approval:
+  `app/orchestrator/actions.py`. Plain-language step labels: `app/agents/describe.py`.
+- Command bar: `app/command/parse.py` (deterministic) + `app/command/service.py` (dispatch, JEV fallback).
+- Onboarding: `app/onboarding/timetable.py` (pure parsers) + `app/onboarding/extract.py` (pipeline, trace).
+- Frontend: `pages/Feed.tsx` (home), `components/{ActionCard,LiveRun,CommandBar,Timetable}.tsx`.
+- UI screenshots: `scripts/ui_screens.py` (dev-only, Playwright + system Chrome).
+
 ## Rules
 - Two languages only: Python 3.11+ (backend) and TypeScript (frontend).
 - Secrets only in `.env` (gitignored; template `.env.example`). Model choices only in
@@ -30,6 +39,8 @@ cd backend && uv run python -m app.startup       # validate .env + models.yaml
 - Deterministic first: LLM calls go through `LLMClient` (cost-logged). Escalations must be logged
   (ingestion_log / agent trace) with their reason.
 - Schema changes need an Alembic migration (`backend/app/db/migrations`).
+- Never fake agentic UI: every card/run/step shown must come from a DB row; stubs only behind
+  `config/features.json` flags and listed in `UX.md` §10.
 - No mocks/fakes in production code. The scripted test provider lives only in `backend/tests/`.
 - No silent `except`. Record the error (job/upload/pack state, trace step, llm_calls row).
 - Agent prompts live in `backend/prompts/*.md` with a `version:` header. Bump it when you change a prompt.

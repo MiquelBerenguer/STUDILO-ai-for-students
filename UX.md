@@ -258,3 +258,17 @@ never rendered with invented data; when its flag is off it is not rendered at al
 - The bell shows the number of open cards and opens the feed. There is no separate inbox list.
 - Browser notifications fire for new cards while a tab is open. On plain-HTTP LAN phones this does not
   work (secure-context rule); the feed itself is the reliable channel.
+
+## 12. Measured results and known gaps (2026-09-26)
+- **Time to first value:** 2.3–2.5 s from landing to the Novi feed in the real UI, using a timetable
+  screenshot (grid path, no AI). Measured by `scripts/ui_screens.py after`. The API-level E2E test
+  (`tests/test_onboarding.py`) asserts 3 steps and < 60 s.
+- **Command bar coverage:** 4 intents (generate exam, ask, change exam date, open). Anything else gets a
+  help card listing what works.
+- **Catch-up:** needs either notes or a syllabus for the course; otherwise the job fails with a card
+  explaining what to add.
+- **Not yet exercised with a paid model:** the Q&A agent, the catch-up, focused exams and the vision
+  timetable fallback. They have only run against the scripted test provider.
+- **Undo** covers autonomous note filing, pack builds and approved exam-date changes. Deleting a course
+  or exam from the secondary views is direct (the student's own action) and not undoable.
+- **Upload page:** kept for bulk uploads (Courses → course); day-to-day uploads happen inside cards.
