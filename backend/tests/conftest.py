@@ -16,6 +16,7 @@ tasks:
   exam_generation: { provider: scripted, model: strong }
   exam_verification: { provider: scripted, model: mid }
   course_qa: { provider: scripted, model: mid }
+  timetable_extraction: { provider: scripted, model: vision }
   embeddings: { provider: local, model: hashing-384 }
 pricing:
   cheap: { input: 0.1, output: 0.4 }

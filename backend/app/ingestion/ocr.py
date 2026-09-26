@@ -126,6 +126,23 @@ def run_ocr(img: np.ndarray) -> OcrResult:
                      ink_ratio, ink_outside_ratio, angle)
 
 
+def ocr_items(img: np.ndarray) -> tuple[list[tuple[np.ndarray, str, float]], np.ndarray, float]:
+    """Positioned OCR boxes plus a colour image aligned with them (same downscale + deskew).
+
+    Used by layout-aware parsers (timetables) that need both the text positions and the colours/lines.
+    """
+    processed, angle = preprocess(img)
+    result, _ = _get_engine()(processed)
+    items = [(np.array(box, dtype=np.float32), str(txt), float(score)) for box, txt, score in (result or [])]
+    h, w = img.shape[:2]
+    ph, pw = processed.shape[:2]
+    color = cv2.resize(img, (pw, ph), interpolation=cv2.INTER_AREA) if (ph, pw) != (h, w) else img.copy()
+    if 0.5 <= abs(angle) <= 15:
+        m = cv2.getRotationMatrix2D((pw / 2, ph / 2), angle, 1.0)
+        color = cv2.warpAffine(color, m, (pw, ph), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+    return items, color, angle
+
+
 def _assemble(items: list[tuple[np.ndarray, str, float]]) -> str:
     """Order boxes top-to-bottom, left-to-right; blank line on large vertical gaps (paragraphs)."""
     rows = sorted(items, key=lambda it: (float(it[0][:, 1].min()), float(it[0][:, 0].min())))

@@ -28,9 +28,22 @@ class LoginIn(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class GuestIn(BaseModel):
+    timezone: str | None = Field(default=None, max_length=64)  # from the browser; unknown zones fall back
+
+    @field_validator("timezone")
+    @classmethod
+    def _tz(cls, v: str | None) -> str | None:
+        try:
+            return v if v and ZoneInfo(v) else None
+        except (ZoneInfoNotFoundError, ValueError):
+            return None
+
+
 class MeOut(ORM):
     id: str
-    email: str
+    email: str | None
+    is_guest: bool
     display_name: str
     journey_state: str
     timezone: str
@@ -77,6 +90,7 @@ class CourseOut(ORM):
     name: str
     color: str
     syllabus: str
+    professor: str = ""
 
 
 class SlotIn(BaseModel):

@@ -55,6 +55,7 @@ class Course(IdMixin, TimestampMixin, UserOwned, Base):
     name: Mapped[str] = mapped_column(String(120))
     color: Mapped[str] = mapped_column(String(16), default="#6366f1")
     syllabus: Mapped[str] = mapped_column(Text, default="")
+    professor: Mapped[str] = mapped_column(String(160), default="")
     slots: Mapped[list[ClassSlot]] = relationship(back_populates="course", cascade="all, delete-orphan")
 
 

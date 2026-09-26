@@ -22,6 +22,7 @@ KNOWN_TASKS = (
     "exam_generation",
     "exam_verification",
     "course_qa",
+    "timetable_extraction",
     "embeddings",
 )
 

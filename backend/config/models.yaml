@@ -7,6 +7,8 @@ tasks:
   jev_classification: { provider: google, model: gemini-3.1-flash-lite, fallback: [openai/gpt-5.6-luna] }
   # Handwriting / equations / diagrams -> Markdown + LaTeX. Cheapest vision-capable model.
   vision_transcribe: { provider: google, model: gemini-3.1-flash-lite, fallback: [google/gemini-3.5-flash] }
+  # Onboarding: timetable screenshot/photo/PDF → weekly slots, only when the grid parser isn't confident.
+  timetable_extraction: { provider: google, model: gemini-3.1-flash-lite, fallback: [google/gemini-3.5-flash] }
   notes_structuring: { provider: google, model: gemini-3.5-flash, fallback: [openai/gpt-5.6-luna] }
   course_memory: { provider: google, model: gemini-3.5-flash, fallback: [openai/gpt-5.6-luna] }
   exam_generation: { provider: openai, model: gpt-5.6-terra, fallback: [google/gemini-3.5-flash] }

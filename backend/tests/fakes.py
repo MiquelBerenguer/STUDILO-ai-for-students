@@ -58,7 +58,7 @@ class ScriptedAdapter:
             calls = self._exam(messages)
         elif "answer" in names:
             calls = self._qa(messages)
-        elif model.startswith("vision"):
+        elif model.startswith("vision") and not json_mode:
             text = "# Primera llei de la termodinàmica\n\nEl calor aportat és $Q = \\Delta U + W$.\n\n- Sistema tancat"
         elif json_mode:
             text = self._json(messages)
@@ -167,6 +167,12 @@ class ScriptedAdapter:
 
     def _json(self, messages: list[Message]) -> str:
         prompt = " ".join(str(m.get("content", "")) for m in messages)
+        if '"certainty"' in prompt:  # timetable vision/text fallback: answer with the fixture's ground truth
+            from tests.fixture_factory import TIMETABLE
+            days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            return json.dumps({"slots": [{"subject": sub, "weekday": days[wd], "start": st, "end": en, "room": room,
+                                          "professor": prof, "certainty": "certain" if wd != 4 else "unsure"}
+                                         for sub, wd, st, en, room, prof in TIMETABLE]})
         if "likely_topics" in prompt:
             ids = re.findall(rf"\[({ID})\]", prompt)
             return json.dumps({"likely_topics": ["First law of thermodynamics"],

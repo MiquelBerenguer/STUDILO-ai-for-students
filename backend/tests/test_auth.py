@@ -48,7 +48,7 @@ def test_password_is_hashed_and_duplicates_rejected(app) -> None:  # type: ignor
 
 
 def test_every_non_public_endpoint_requires_auth(app) -> None:  # type: ignore[no-untyped-def]
-    public = {("POST", "/api/v1/auth/register"), ("POST", "/api/v1/auth/login"), ("POST", "/api/v1/auth/logout"),
+    public = {("POST", "/api/v1/auth/register"), ("POST", "/api/v1/auth/login"), ("POST", "/api/v1/auth/logout"), ("POST", "/api/v1/auth/guest"),
               ("GET", "/api/v1/health"), ("GET", "/api/v1/meta")}
     anon = TestClient(app)
     checked = 0
