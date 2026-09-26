@@ -28,7 +28,8 @@ def shot(page: Page, folder: str, name: str) -> None:
     path = OUT / folder / f"{name}.png"
     path.parent.mkdir(parents=True, exist_ok=True)
     page.wait_for_timeout(600)
-    page.screenshot(path=str(path), full_page=True)
+    # The v2 shell has a fixed sidebar/sticky header, which full-page capture smears; use a tall viewport instead.
+    page.screenshot(path=str(path), full_page=folder == "before")
     print("saved", path.relative_to(OUT.parent.parent))
 
 
@@ -96,9 +97,27 @@ def after(page: Page, timetable: Path) -> None:
     page.reload()
     page.wait_for_selector("[data-testid=novi-feed]")
     shot(page, "after", "04-home-novi-feed-with-cards")
+    # approval model + visible work, all zero-cost: a command that needs approval, a deterministic upload
+    course = api.get(f"{BASE}/api/v1/courses").json()[0]
+    exam_day = (datetime.now() + timedelta(days=20)).date()
+    api.post(f"{BASE}/api/v1/exams", data={"course_id": course["id"], "title": f"{course['name']} midterm",
+                                           "exam_date": exam_day.isoformat()})
+    api.post(f"{BASE}/api/v1/command", data={"text": f"move my {course['name']} midterm to "
+                                                     f"{(exam_day + timedelta(days=7)).isoformat()}"})
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+    from tests.fixture_factory import text_pdf  # noqa: E402  (dev script: reuse the test fixture generator)
+    api.post(f"{BASE}/api/v1/uploads", multipart={"course_id": course["id"], "kind": "past_exam",
+                                                  "files": {"name": "past-exam-2025.pdf", "mimeType": "application/pdf",
+                                                            "buffer": text_pdf()}})
+    page.wait_for_timeout(4000)
+    page.reload()
+    page.wait_for_selector("[data-testid=novi-feed]")
+    page.locator("[data-testid=live-run] button").first.click()
+    page.wait_for_timeout(1200)
+    shot(page, "after", "06-approval-card-and-expanded-agent-run")
     page.keyboard.press("Meta+k")
     page.wait_for_selector("[data-testid=command-palette]")
-    page.fill("[data-testid=command-input]", "what did we cover last week in Fluids?")
+    page.fill("[data-testid=command-palette] [data-testid=command-input]", "what did we cover last week in Fluids?")
     shot(page, "after", "05-command-bar")
     if elapsed > 60:
         sys.exit(f"time to first value {elapsed:.1f}s exceeds 60s")
@@ -111,6 +130,7 @@ if __name__ == "__main__":
     args = ap.parse_args()
     with sync_playwright() as p:
         browser = p.chromium.launch(channel="chrome", headless=True)
-        page = browser.new_context(viewport={"width": 1440, "height": 900}).new_page()
+        height = 900 if args.phase == "before" else 1500
+        page = browser.new_context(viewport={"width": 1440, "height": height}).new_page()
         before(page) if args.phase == "before" else after(page, args.timetable)
         browser.close()

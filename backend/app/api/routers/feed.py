@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.agents.describe import AGENT_NAMES, describe_run, describe_step
+from app.agents.describe import AGENT_NAMES, describe_run, describe_step, headline
 from app.api.deps import DB, CurrentUser, get_or_404
 from app.api.schemas import JobOut
 from app.command.service import CommandResult, run_command
@@ -76,6 +76,7 @@ class RunOut(BaseModel):
     mode: str
     state: str
     summary: str
+    headline: str
     goal: str
     output: str
     cost_usd: float
@@ -154,7 +155,8 @@ def run_out(db: DB, r: AgentRun, with_steps: bool = True, max_steps: int = 40) -
         act = db.scalar(select(AgentAction).where(AgentAction.job_id == r.job_id, AgentAction.status == "applied"))
         undo_id = act.id if act else None
     return RunOut(id=r.id, agent=r.agent, agent_name=AGENT_NAMES.get(r.agent, r.agent), mode=r.mode, state=r.state,
-                  summary=describe_run(r.agent, r.goal, r.output, r.state), goal=r.goal[:500], output=r.output[:500],
+                  summary=describe_run(r.agent, r.goal, r.output, r.state),
+                  headline=headline(r.agent, r.output, r.state), goal=r.goal[:500], output=r.output[:500],
                   cost_usd=r.cost_usd, llm_calls=r.llm_calls, created_at=r.created_at, finished_at=r.finished_at,
                   steps=steps, undo_action_id=undo_id)
 
@@ -196,7 +198,9 @@ def _next_items(db: DB, user: User, now: datetime) -> list[NextItem]:
                 items.append(NextItem(at=when, kind="exam_pack",
                                       text=f"I'll {'build' if t == 14 else 'refresh'} your {exam.title} Exam Pack (T-{t})"))
                 break
-    return sorted(items, key=lambda i: i.at)[:6]
+    items.sort(key=lambda i: i.at)
+    class_ends = [i for i in items if i.kind == "class_end"][:2]  # the next two are enough; the rest is the week
+    return [i for i in items if i.kind != "class_end" or i in class_ends][:5]
 
 
 def _week(db: DB, user: User, now: datetime) -> list[WeekItem]:

@@ -131,3 +131,44 @@ def describe_run(agent: str, goal: str, output: str, state: str) -> str:
     verb = {"running": "is working on", "succeeded": "finished", "failed": "failed on",
             "step_limit": "stopped (step limit) on"}.get(state, state)
     return f"{head} {verb}: {what}"
+
+
+def headline(agent: str, output: str, state: str) -> str:
+    """One plain sentence for a finished run (the raw output stays in the trace for Activity)."""
+    import json
+    import re
+
+    if state != "succeeded":
+        return {"failed": "Couldn't finish — see the steps", "step_limit": "Stopped before finishing"}.get(state, state)
+    out = (output or "").strip()
+    if out.startswith("{"):
+        try:
+            data = json.loads(out)
+            out = str(data.get("summary") or data.get("answer_md") or out)
+        except ValueError:
+            pass
+    if agent == "planner":
+        parts = []
+        for seg in filter(None, (s.strip() for s in out.split(";"))):
+            if m := re.match(r"class_ended (.+) \d{4}-\d\d-\d\d$", seg):
+                parts.append(f"Noticed your {m.group(1)} class ended")
+            elif seg.startswith("missed "):
+                parts.append("Flagged a class that got no notes")
+            elif m := re.match(r"exam_approaching (.+) (T-\d+)$", seg):
+                parts.append(f"{m.group(1)} is getting close ({m.group(2)})")
+            elif seg == "session awaiting_upload":
+                parts.append("Asked for your notes")
+            elif seg.startswith("nothing to do"):
+                parts.append("Checked — nothing to do")
+            elif seg.startswith("session "):
+                parts.append("Updated the class session")
+        return "; ".join(parts) or "Checked your schedule"
+    if agent == "course_memory" and out == "session flagged as missed":
+        return "Flagged the class as missed in your course memory"
+    if agent == "onboarding" and (m := re.match(r"(\d+) classes via (\w+)", out)):
+        how = {"grid": "no AI needed", "ics": "no AI needed", "text": "no AI needed"}.get(m.group(2), "with the AI reader")
+        return f"Read {m.group(1)} classes from your timetable ({how})"
+    if agent == "ingestion" and (m := re.search(r"topic=([^;]+)", out)):
+        topic = m.group(1).strip()
+        return f"Read your file → {topic}" if topic and topic != "None" else "Read your file"
+    return _short(out, 110) or "Done"
