@@ -1,6 +1,6 @@
 # View agents: how to start them
 
-Five agents finish Novi in parallel, one per view. Each one works in its own worktree in
+Four agents finish Novi in parallel, one per view (Ask Novi, Overview, Schedule, Courses). Each one works in its own worktree in
 `/Users/miquel/Desktop/Personal/Studilo/novi-worktrees/<view>`. The rules they all follow are in
 `AGENTS.md`; each agent's brief is in this folder.
 
@@ -26,11 +26,6 @@ You are the Overview agent. Read AGENTS.md, CLAUDE.md and docs/agents/overview.m
 You are the Schedule agent. Read AGENTS.md, CLAUDE.md and docs/agents/schedule.md in this worktree, then follow the brief. Start by replying with your plan and wait for my go.
 ```
 
-**exam-prep**
-```
-You are the Exam prep agent. Read AGENTS.md, CLAUDE.md and docs/agents/exam-prep.md in this worktree, then follow the brief. Start by replying with your plan and wait for my go.
-```
-
 **courses**
 ```
 You are the Courses agent. Read AGENTS.md, CLAUDE.md and docs/agents/courses.md in this worktree, then follow the brief. Start by replying with your plan and wait for my go.
@@ -38,6 +33,6 @@ You are the Courses agent. Read AGENTS.md, CLAUDE.md and docs/agents/courses.md 
 
 ## When an agent finishes a piece
 It commits on its branch and tells you what changed. To see a frontend change before merge, open its
-preview URL (5174–5178). Ask the integrator (the agent in the main checkout) to merge that view:
+preview URL (5174 ask-novi, 5175 overview, 5176 schedule, 5178 courses). Ask the integrator (the agent in the main checkout) to merge that view:
 review → `make test` → merge into `master` → restart the main app. The other agents then run
 `git merge master` to pick it up.

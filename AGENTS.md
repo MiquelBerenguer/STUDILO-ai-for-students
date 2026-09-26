@@ -13,7 +13,7 @@ Verify before you say you're done: `make test` (backend pytest + frontend typech
 
 ## How the five view agents work together
 
-Novi is **one system**: one database, one backend, one app. Five agents finish it in parallel, one per
+Novi is **one system**: one database, one backend, one app. Four agents finish it in parallel, one per
 view. Each agent works in its **own git worktree** (a ~6 MB copy of the code on its own branch), so a
 half-finished change never breaks another agent. Everything heavy is shared:
 
@@ -36,7 +36,6 @@ half-finished change never breaks another agent. Everything heavy is shared:
 | `ask-novi` | `feature/ask-novi` | **Ask Novi**: command bar, ⌘K, answers | http://localhost:5174 |
 | `overview` | `feature/overview` | **Overview**: the Novi feed (home) + app shell | http://localhost:5175 |
 | `schedule` | `feature/schedule` | **Schedule**: timetable, onboarding, calendars, triggers | http://localhost:5176 |
-| `exam-prep` | `feature/exam-prep` | **Exam prep**: exams, Exam Packs, practice | http://localhost:5177 |
 | `courses` | `feature/courses` | **Courses**: notes, course memory, sources, uploads | http://localhost:5178 |
 
 The main checkout's app is http://localhost:5173 (backend 8000).
@@ -51,8 +50,14 @@ only under the rules in the next section. Ready-to-use briefs for each agent liv
 | Ask Novi | `app/command/*`, `app/tools/qa.py`, `prompts/qa_agent.md`, handler `handle_answer_question` | `components/CommandBar.tsx` |
 | Overview | `app/api/routers/feed.py`, `app/orchestrator/cards.py`, `app/orchestrator/actions.py`, `app/agents/describe.py`, `app/api/routers/activity.py`, `app/api/routers/settings.py`, `app/api/routers/auth.py` | `pages/Feed.tsx`, `pages/Activity.tsx`, `pages/Settings.tsx`, `pages/Auth.tsx`, `components/ActionCard.tsx`, `components/LiveRun.tsx`, `components/Layout.tsx`, `components/icons.tsx` |
 | Schedule | `app/onboarding/*`, `app/api/routers/onboarding.py`, `app/integrations/calendar_feed.py`, calendar routes in `app/api/routers/integrations.py`, slot/profile routes in `app/api/routers/setup.py`, `app/agents/planner.py`, `app/tools/planner.py`, handlers `handle_class_ended`, `handle_check_missed`, `handle_missed_upload`, `handle_sync_calendar` | `pages/Schedule.tsx`, `pages/Onboarding.tsx`, `components/Timetable.tsx` |
-| Exam prep | `app/api/routers/exams.py`, `app/tools/exam.py`, `prompts/exam_agent.md`, `prompts/exam_verifier.md`, exam/assignment routes in `setup.py`, handler `handle_build_exam_pack` | `pages/Exams.tsx`, `pages/ExamPack.tsx` |
 | Courses | `app/api/routers/notes.py`, `app/api/routers/uploads.py`, `app/tools/notes.py`, `app/tools/memory.py`, `app/tools/store.py`, `app/tools/ingestion.py`, `app/ingestion/*`, `app/agents/ingestion.py`, `app/integrations/upc_guides.py` + guide route, `prompts/notes_agent.md`, `prompts/course_memory_agent.md`, `prompts/catch_up.md`, `prompts/vision_transcribe.md`, course routes in `setup.py`, handlers `handle_process_upload`, `handle_catch_up` | `pages/Courses.tsx`, `pages/Subject.tsx`, `pages/Upload.tsx`, `components/editors.tsx` |
+
+**No Exam prep view.** There is no Exam prep agent or view any more. The exam backend keeps working (Exam
+Packs at T-14/7/3, practice exams, focused exams from Ask Novi). Its files have **no owner and are frozen for
+view agents**: `app/api/routers/exams.py`, `app/tools/exam.py`, the exam prompts, exam/assignment routes in
+`setup.py`, `handle_build_exam_pack`, `pages/Exams.tsx` and `pages/ExamPack.tsx`. A view may *read* exams,
+packs and assignments through the existing endpoints (e.g. Overview showing upcoming exams). If it needs a
+change there, describe it in the summary for the integrator.
 
 Tests: put yours in a new file named after your view (`tests/test_view_<view>.py`). Only edit an existing
 test file if your change breaks it.
@@ -60,8 +65,8 @@ test file if your change breaks it.
 ### Shared files: how to change them without conflicts
 - **`app/db/models.py` + migrations.** The schema is shared by all views and the one database.
   - Add columns or tables only; never rename or remove.
-  - Use your **reserved migration id**: `0005` schedule · `0006` courses · `0007` exam-prep ·
-    `0008` overview · `0009` ask-novi, with `down_revision = "0004"`. The integrator re-chains them at
+  - Use your **reserved migration id**: `0005` schedule · `0006` courses · `0008` overview ·
+    `0009` ask-novi (`0007` is unused), with `down_revision = "0004"`. The integrator re-chains them at
     merge time.
   - Never run a migration against the shared database: the main app applies it after merge.
 - **`app/orchestrator/handlers.py`**: edit only the handler functions your view owns (table above). New
