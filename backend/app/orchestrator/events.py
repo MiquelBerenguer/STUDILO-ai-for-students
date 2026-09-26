@@ -16,6 +16,7 @@ from app.db.models import Event, Job, TriggerLog
 
 EventType = Literal[
     "class_ended", "class_slot_passed_without_upload", "upload_completed", "exam_approaching", "exam_requested",
+    "catch_up_requested", "question_asked",
 ]
 
 EVENT_TO_JOB: dict[str, str] = {
@@ -24,6 +25,8 @@ EVENT_TO_JOB: dict[str, str] = {
     "upload_completed": "process_upload",
     "exam_approaching": "build_exam_pack",
     "exam_requested": "build_exam_pack",
+    "catch_up_requested": "catch_up",
+    "question_asked": "answer_question",
 }
 
 

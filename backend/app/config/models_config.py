@@ -21,6 +21,7 @@ KNOWN_TASKS = (
     "course_memory",
     "exam_generation",
     "exam_verification",
+    "course_qa",
     "embeddings",
 )
 

@@ -41,7 +41,7 @@ def test_exam_pack_is_grounded_verified_and_complete(client, scripted) -> None: 
     steps = client.get(f"/api/v1/activity/runs/{runs[0]['id']}").json()["steps"]
     names = [s["name"] for s in steps if s["kind"] == "tool"]
     assert names.count("draft_question") == 5 and names[-1] == "save_exam_pack"
-    assert any(n["kind"] == "exam_pack" for n in client.get("/api/v1/inbox").json())
+    assert any(n["kind"] == "exam_pack_ready" for n in client.get("/api/v1/inbox").json())
 
 
 def test_timed_attempt_locks_answers_after_submit(client) -> None:  # type: ignore[no-untyped-def]

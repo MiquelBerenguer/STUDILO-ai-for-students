@@ -81,11 +81,21 @@ async def update_topic_note_tool(ctx: ToolContext, a: UpdateArgs) -> dict[str, o
         if not a.heading:
             raise ToolError("append_section requires a heading")
         section = store.append_section(ctx.db, topic, a.heading, a.content_md, a.source_upload_ids, a.after_section_id)
+        store.fx(ctx.state)["created_sections"].append(section.id)
     else:
         section = store.must_get(ctx.db, NoteSection, a.section_id, "section")
         if section.topic_id != topic.id:
             raise ToolError("section is not in that topic")
+        revised = store.fx(ctx.state)["revised"]
+        created_here = section.id in store.fx(ctx.state)["created_sections"]
+        if not created_here and section.id not in revised:
+            revised[section.id] = {"heading": section.heading, "content_md": section.content_md,
+                                   "before_version": section.version}
         store.revise_section(ctx.db, section, a.content_md, a.source_upload_ids, a.heading)
+        if created_here:
+            section.version = 1  # still this run's own new section: undo deletes it
+        else:
+            revised[section.id]["after_version"] = section.version
     chunks = await store.reindex_section(ctx.db, ctx.user_id, section)
     ctx.state.setdefault("touched_topics", set()).add(topic.id)
     ctx.state.setdefault("touched_sections", set()).add(section.id)
@@ -97,6 +107,7 @@ def create_topic_tool(ctx: ToolContext, a: CreateTopicArgs) -> dict[str, object]
     if existing:
         return {"topic_id": existing.id, "title": existing.title, "note": "topic already existed"}
     topic = store.create_topic(ctx.db, _course(ctx), a.title, a.summary, a.parent_topic_id)
+    store.fx(ctx.state)["created_topics"].append(topic.id)
     return {"topic_id": topic.id, "title": topic.title}
 
 

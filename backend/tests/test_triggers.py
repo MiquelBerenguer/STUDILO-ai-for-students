@@ -51,7 +51,7 @@ def test_missed_slot_is_flagged_in_course_memory_then_cleared_by_late_upload(cli
     assert session["state"] == "missed" and session["missed_reason"]
     mem = client.get(f"/api/v1/courses/{ids['thermo']['id']}/memory").json()
     assert mem["missed_count"] == 1
-    assert any(n["kind"] == "reminder" for n in client.get("/api/v1/inbox").json())
+    assert any(n["kind"] == "missed_class" for n in client.get("/api/v1/inbox").json())
     # The scheduled check job later finds nothing to do (no duplicate event).
     drain(datetime(2026, 10, 2, 0, 0, tzinfo=UTC))
     assert sum(1 for j in client.get("/api/v1/jobs").json() if j["type"] == "missed_upload") == 1

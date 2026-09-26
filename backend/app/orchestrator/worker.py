@@ -18,10 +18,19 @@ from app.db.base import utcnow
 from app.db.engine import scoped_session_for, system_session_ctx
 from app.db.models import Job, User
 from app.llm.client import get_llm
+from app.orchestrator import cards
 from app.orchestrator.handlers import HANDLERS
 from app.orchestrator.state_machines import JOB
 
 log = logging.getLogger(__name__)
+
+# Pipelines the student is waiting on: a failure becomes a feed card with Retry (UX.md §4).
+FAILURE_CARDS = {
+    "process_upload": "I couldn't process your upload",
+    "build_exam_pack": "I couldn't build the Exam Pack",
+    "catch_up": "I couldn't prepare the catch-up",
+    "answer_question": "I couldn't answer that",
+}
 
 
 def claim_next(now: datetime | None = None) -> tuple[str, str] | None:
@@ -65,6 +74,10 @@ async def run_job(job_id: str, user_id: str, now: datetime | None = None) -> str
             assert job is not None
             JOB.check(job.state, "failed")
             job.state, job.error, job.finished_at = "failed", f"{type(exc).__name__}: {exc}"[:4000], utcnow()
+            if job.type in FAILURE_CARDS:
+                cards.create_card(db, "job_failed", FAILURE_CARDS[job.type], body=str(exc)[:400],
+                                  actions=[cards.action("retry", "Retry", primary=True), cards.DISMISS],
+                                  data={"job_id": job.id, "job_type": job.type}, dedupe_key=f"job_failed:{job.id}")
             db.commit()
             return "failed"
         job = db.get(Job, job_id)

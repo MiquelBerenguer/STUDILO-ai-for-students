@@ -6,6 +6,8 @@ ClassSession (per class):  scheduled ─▶ awaiting_upload ─▶ uploaded ─�
 Upload (per file):         received ─▶ extracting ─▶ classifying ─▶ structuring ─▶ updating_memory ─▶ done
                            (past exams: classifying ─▶ done)       any non-terminal ─▶ failed ─(retry)─▶ received
 ExamPack (per build):      pending ─▶ building ─▶ ready | failed
+Card (feed):               open ─▶ done | dismissed
+AgentAction (UX §7):       proposed ─▶ applied | rejected ; applied ─▶ undone
 Job (orchestrator):        queued ─▶ running ─▶ succeeded | failed ; failed ─(retry)─▶ queued
 
 Every state change in the code base goes through `transition()`, which rejects illegal moves.
@@ -40,8 +42,8 @@ CLASS_SESSION = StateMachine("class_session", {
     "scheduled": {"awaiting_upload", "uploaded"},
     "awaiting_upload": {"uploaded", "missed"},
     "missed": {"uploaded"},
-    "uploaded": {"processed", "uploaded"},
-    "processed": {"uploaded"},  # another upload for the same class
+    "uploaded": {"processed", "uploaded", "scheduled", "awaiting_upload", "missed"},  # last three: undo
+    "processed": {"uploaded", "scheduled", "awaiting_upload", "missed"},  # another upload, or undo
 })
 
 UPLOAD = StateMachine("upload", {
@@ -51,7 +53,8 @@ UPLOAD = StateMachine("upload", {
     "structuring": {"updating_memory", "failed"},
     "updating_memory": {"done", "failed"},
     "failed": {"received"},
-    "done": set(),
+    "done": {"undone"},  # the student undid the autonomous filing
+    "undone": set(),
 })
 
 EXAM_PACK = StateMachine("exam_pack", {
@@ -59,6 +62,15 @@ EXAM_PACK = StateMachine("exam_pack", {
     "building": {"ready", "failed"},
     "ready": set(),
     "failed": set(),
+})
+
+CARD = StateMachine("card", {"open": {"done", "dismissed"}, "done": set(), "dismissed": set()})
+
+ACTION = StateMachine("agent_action", {
+    "proposed": {"applied", "rejected"},
+    "applied": {"undone"},
+    "rejected": set(),
+    "undone": set(),
 })
 
 JOB = StateMachine("job", {
@@ -73,6 +85,7 @@ class _HasState(Protocol):
     state: str
 
 
-def transition(machine: StateMachine, obj: _HasState, dst: str) -> None:
-    machine.check(obj.state, dst)
-    obj.state = dst
+def transition(machine: StateMachine, obj: _HasState | object, dst: str, attr: str = "state") -> None:
+    """Move `obj.<attr>` to `dst`, rejecting illegal moves. Cards and agent actions use attr="status"."""
+    machine.check(getattr(obj, attr), dst)
+    setattr(obj, attr, dst)

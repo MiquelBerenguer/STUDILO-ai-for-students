@@ -129,6 +129,22 @@ async def reindex_section(db: Session, user_id: str, section: NoteSection) -> in
     return len(pieces)
 
 
+def delete_section(db: Session, section: NoteSection) -> None:
+    """Remove a section, its chunks and its vectors (the vec0 table has no FK cascade)."""
+    old = list(db.scalars(select(Chunk).where(Chunk.section_id == section.id)))
+    for dim in {c.embedding_dim for c in old}:
+        vectors.delete(db, [c.id for c in old if c.embedding_dim == dim], dim)
+    db.execute(delete(Chunk).where(Chunk.section_id == section.id))
+    db.delete(section)
+    db.flush()
+
+
+def fx(state: dict[str, object]) -> dict[str, object]:
+    """Per-run record of what an autonomous agent changed, used to undo it (UX.md §7)."""
+    return state.setdefault("effects", {"created_sections": [], "revised": {}, "created_topics": [],  # type: ignore[return-value]
+                                        "created_dependencies": []})
+
+
 async def search_notes(db: Session, user_id: str, query: str, course_id: str | None = None,
                        topic_id: str | None = None, k: int = 6) -> list[dict[str, object]]:
     vecs, _ = await embed_texts([query], user_id)

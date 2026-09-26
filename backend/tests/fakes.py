@@ -56,6 +56,8 @@ class ScriptedAdapter:
             calls = self._memory(messages)
         elif "save_exam_pack" in names:
             calls = self._exam(messages)
+        elif "answer" in names:
+            calls = self._qa(messages)
         elif model.startswith("vision"):
             text = "# Primera llei de la termodinàmica\n\nEl calor aportat és $Q = \\Delta U + W$.\n\n- Sistema tancat"
         elif json_mode:
@@ -145,8 +147,34 @@ class ScriptedAdapter:
                            {"criterion": "Correct value and units", "points": 5}],
                 "points": 10, "cited_section_ids": [topic["sections"][0]["section_id"]]}
 
+    # -- Q&A agent: class history for the date range → answer citing sessions (and a section if found)
+    def _qa(self, messages: list[Message]) -> list[dict[str, Any]]:
+        goal = str(messages[1]["content"])
+        results = _tool_results(messages)
+        done = [n for n, _ in results]
+        if "get_course_sessions" not in done:
+            m = re.search(r"Date range: (\S+) to (\S+)\.", goal)
+            args: dict[str, Any] = {}
+            if m and m.group(1) != "…":
+                args["since"] = m.group(1)
+            if m and m.group(2) != "…":
+                args["until"] = m.group(2)
+            return [_call("get_course_sessions", args)]
+        sessions = next(r for n, r in results if n == "get_course_sessions")
+        covered = "; ".join(f"{x['date']}: {x['summary'][:60]}" for x in sessions) or "nothing recorded"
+        return [_call("answer", {"answer_md": f"In that period you covered: {covered}",
+                                 "cited_session_ids": [x["session_id"] for x in sessions]})]
+
     def _json(self, messages: list[Message]) -> str:
         prompt = " ".join(str(m.get("content", "")) for m in messages)
+        if "likely_topics" in prompt:
+            ids = re.findall(rf"\[({ID})\]", prompt)
+            return json.dumps({"likely_topics": ["First law of thermodynamics"],
+                               "summary_md": "The class probably covered the **first law**: $\\Delta U = Q - W$.",
+                               "cited_section_ids": ids[:1]})
+        if "Intents:" in prompt:
+            return json.dumps({"intent": "generate_exam", "course": None, "topic": "first law",
+                               "duration_minutes": 30})
         if "solvable_with_given_data" in prompt:
             fail = self.verify_fail_once and len(self._verify_failed) == 0
             if fail:

@@ -162,8 +162,10 @@ def link_topics_tool(ctx: ToolContext, a: LinkTopicsArgs) -> dict[str, object]:
     exists = ctx.db.scalar(select(TopicDependency).where(TopicDependency.topic_id == a.topic_id,
                                                          TopicDependency.depends_on_id == a.depends_on_topic_id))
     if not exists:
-        ctx.db.add(TopicDependency(course_id=_course(ctx), topic_id=a.topic_id, depends_on_id=a.depends_on_topic_id))
+        dep = TopicDependency(course_id=_course(ctx), topic_id=a.topic_id, depends_on_id=a.depends_on_topic_id)
+        ctx.db.add(dep)
         ctx.db.flush()
+        store.fx(ctx.state)["created_dependencies"].append(dep.id)
     return {"ok": True}
 
 

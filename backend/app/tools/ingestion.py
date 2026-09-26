@@ -23,7 +23,7 @@ from app.ingestion.legibility import check_legibility
 from app.ingestion.ocr import encode_png, load_image, run_ocr
 from app.llm.embeddings import embed_texts
 from app.llm.types import LLMUnavailable
-from app.tools.store import create_topic, from_blob, must_get, read_upload_bytes, to_blob
+from app.tools.store import create_topic, from_blob, fx, must_get, read_upload_bytes, to_blob
 
 RENDER_DPI = 200
 
@@ -255,6 +255,7 @@ async def classify_topic_tool(ctx: ToolContext, a: UploadArg) -> dict[str, objec
             title = ans.title if ans else f"Class notes {upload.created_at:%Y-%m-%d}"
         chosen = create_topic(ctx.db, upload.course_id, title)
         chosen.embedding, chosen.embedding_model = to_blob(vec), label
+        fx(ctx.state)["created_topics"].append(chosen.id)
         is_new = True
     else:
         old = from_blob(chosen.embedding) if chosen.embedding else vec

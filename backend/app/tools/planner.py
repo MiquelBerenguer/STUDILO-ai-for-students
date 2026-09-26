@@ -11,7 +11,8 @@ from sqlalchemy import select
 from app.agents.base import Tool, ToolContext
 from app.db.base import utcnow
 from app.db.engine import system_session_ctx
-from app.db.models import ClassSession, ClassSlot, Course, Exam, Job, Notification, OpenQuestion, User
+from app.db.models import ClassSession, ClassSlot, Course, Exam, Job, OpenQuestion, User
+from app.orchestrator import cards
 from app.tools import store
 from app.tools.memory import computed_pace, memory_row
 
@@ -27,11 +28,13 @@ class CourseArg(BaseModel):
 
 
 class ReminderArgs(BaseModel):
-    kind: Literal["upload_prompt", "reminder", "exam_pack", "info"]
+    kind: Literal["upload_prompt", "missed_class", "info"]
     title: str = Field(max_length=200)
     body: str = Field(default="", max_length=2000)
     link: str = Field(default="", max_length=300)
     data: dict[str, Any] = Field(default_factory=dict)
+    actions: list[dict[str, Any]] = Field(default_factory=list, description="typed card actions (cards.action)")
+    dedupe_key: str | None = Field(default=None, max_length=200)
 
 
 class ScheduleArgs(BaseModel):
@@ -71,10 +74,11 @@ def get_course_memory_tool(ctx: ToolContext, a: CourseArg) -> dict[str, object]:
 
 
 def create_reminder_tool(ctx: ToolContext, a: ReminderArgs) -> dict[str, object]:
-    n = Notification(kind=a.kind, title=a.title, body=a.body, link=a.link, data=a.data)
-    ctx.db.add(n)
-    ctx.db.flush()
-    return {"notification_id": n.id}
+    """Puts an action card in the student's Novi feed (and inbox bell)."""
+    card = cards.create_card(ctx.db, a.kind, a.title, body=a.body, link=a.link, data=a.data,
+                             actions=a.actions or None, dedupe_key=a.dedupe_key,
+                             course_id=a.data.get("course_id"))
+    return {"card_id": card.id}
 
 
 def schedule_job_tool(ctx: ToolContext, a: ScheduleArgs) -> dict[str, object]:
@@ -90,6 +94,6 @@ PLANNER_TOOLS = {t.name: t for t in [
     Tool("get_exam_dates", "Exams with days left.", NoArgs, get_exam_dates_tool),
     Tool("get_course_memory", "Pace, missed sessions and open questions of one course.", CourseArg,
          get_course_memory_tool),
-    Tool("create_reminder", "Put a notification in the student's inbox.", ReminderArgs, create_reminder_tool),
+    Tool("create_reminder", "Put an action card in the student's Novi feed.", ReminderArgs, create_reminder_tool),
     Tool("schedule_job", "Schedule a follow-up job at a given time.", ScheduleArgs, schedule_job_tool),
 ]}

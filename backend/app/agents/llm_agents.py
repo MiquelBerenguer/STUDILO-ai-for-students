@@ -6,6 +6,7 @@ from app.agents.base import Tool, ToolLoopAgent
 from app.tools.exam import exam_tools
 from app.tools.memory import memory_tools
 from app.tools.notes import notes_tools
+from app.tools.qa import qa_tools
 
 
 class NotesAgent(ToolLoopAgent):
@@ -39,3 +40,14 @@ class ExamAgent(ToolLoopAgent):
 
     def tools(self) -> list[Tool]:
         return exam_tools()
+
+
+class QAAgent(ToolLoopAgent):
+    name = "qa"
+    prompt = "qa_agent"
+    task = "course_qa"
+    max_steps = 10
+    require_terminal = True
+
+    def tools(self) -> list[Tool]:
+        return qa_tools()

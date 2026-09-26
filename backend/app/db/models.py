@@ -25,14 +25,19 @@ from app.db.base import Base, IdMixin, TimestampMixin, UserOwned, UTCDateTime, u
 # --------------------------------------------------------------------------- identity
 class User(IdMixin, TimestampMixin, Base):
     __tablename__ = "users"
-    email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
-    password_hash: Mapped[str] = mapped_column(String(100))
+    email: Mapped[str | None] = mapped_column(String(320), unique=True, index=True, nullable=True)  # None = guest
+    password_hash: Mapped[str | None] = mapped_column(String(100), nullable=True)
     display_name: Mapped[str] = mapped_column(String(120), default="")
     journey_state: Mapped[str] = mapped_column(String(20), default="onboarding")
     timezone: Mapped[str] = mapped_column(String(64), default="Europe/Madrid")
     semester_start: Mapped[date | None] = mapped_column(Date, nullable=True)
     semester_end: Mapped[date | None] = mapped_column(Date, nullable=True)
     missed_after_hours: Mapped[int] = mapped_column(Integer, default=12)
+    last_seen_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)  # feed "since you were away"
+
+    @property
+    def is_guest(self) -> bool:
+        return self.email is None
 
 
 class AuthSession(IdMixin, TimestampMixin, Base):
@@ -236,13 +241,38 @@ class TriggerLog(IdMixin, TimestampMixin, UserOwned, Base):
 
 
 class Notification(IdMixin, TimestampMixin, UserOwned, Base):
+    """An action card in the Novi feed (UX.md §4). Created only by triggers and jobs."""
+
     __tablename__ = "notifications"
-    kind: Mapped[str] = mapped_column(String(32))  # upload_prompt | reminder | exam_pack | info | error
+    __table_args__ = (UniqueConstraint("user_id", "dedupe_key", name="uq_notifications_user_dedupe"),)
+    kind: Mapped[str] = mapped_column(String(32))  # see app/orchestrator/cards.py CARD_KINDS
     title: Mapped[str] = mapped_column(String(200))
     body: Mapped[str] = mapped_column(Text, default="")
     link: Mapped[str] = mapped_column(String(300), default="")
     data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     read_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)  # open | done | dismissed
+    actions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    priority: Mapped[int] = mapped_column(Integer, default=50)
+    dedupe_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    action_id: Mapped[str | None] = mapped_column(ForeignKey("agent_actions.id", ondelete="SET NULL"), nullable=True)
+    course_id: Mapped[str | None] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+
+class AgentAction(IdMixin, TimestampMixin, UserOwned, Base):
+    """Something Novi did (applied, undoable) or wants to do (proposed, needs approval). UX.md §7."""
+
+    __tablename__ = "agent_actions"
+    kind: Mapped[str] = mapped_column(String(40))  # file_notes | build_pack | change_exam_date
+    risk: Mapped[str] = mapped_column(String(8))  # low | high
+    status: Mapped[str] = mapped_column(String(16), index=True)  # proposed | applied | rejected | undone
+    title: Mapped[str] = mapped_column(String(300))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # what to apply (proposals)
+    effects: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # snapshot needed to undo
+    job_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    upload_id: Mapped[str | None] = mapped_column(ForeignKey("uploads.id", ondelete="CASCADE"), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
 
 class AgentRun(IdMixin, TimestampMixin, UserOwned, Base):

@@ -13,6 +13,7 @@ from app.config.settings import get_settings
 from app.db.base import new_id
 from app.db.models import ClassSession, Course, IngestionLog, Job, Upload
 from app.ingestion.detect import detect_type
+from app.orchestrator import cards
 from app.orchestrator.events import emit
 from app.orchestrator.state_machines import JOB, UPLOAD, transition
 from app.tools.store import upload_path
@@ -63,6 +64,8 @@ async def create_uploads(
         job = emit(db, "upload_completed", {"upload_id": upload.id}, source="manual")
         upload.job_id = job.id
         out.append(upload)
+    if class_session_id:  # the card that asked for these notes has been answered
+        cards.resolve_matching(db, ("upload_prompt", "missed_class"), session_id=class_session_id)
     return out
 
 

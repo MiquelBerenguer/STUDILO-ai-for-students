@@ -11,6 +11,8 @@ tasks:
   course_memory: { provider: google, model: gemini-3.5-flash, fallback: [openai/gpt-5.6-luna] }
   exam_generation: { provider: openai, model: gpt-5.6-terra, fallback: [google/gemini-3.5-flash] }
   exam_verification: { provider: google, model: gemini-3.5-flash, fallback: [openai/gpt-5.6-luna] }
+  # Command bar questions ("what did we cover last week in Fluids?"), answered from your notes.
+  course_qa: { provider: google, model: gemini-3.5-flash, fallback: [openai/gpt-5.6-luna] }
   # Local embeddings, no key. `local/hashing-384` is the deterministic offline fallback.
   embeddings: { provider: fastembed, model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2, fallback: [local/hashing-384] }
 

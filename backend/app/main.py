@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from app.api.routers import activity, auth, exams, notes, settings, setup, uploads
+from app.api.routers import activity, auth, exams, feed, notes, settings, setup, uploads
 from app.config.brand import get_brand
 from app.config.models_config import ConfigError
 from app.config.settings import get_settings
@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app(with_lifespan: bool = True) -> FastAPI:
     app = FastAPI(title=f"{get_brand().name} API", version="1.0.0", lifespan=lifespan if with_lifespan else None)
     for r in (auth.router, setup.router, uploads.router, notes.router, exams.router, activity.router,
-              settings.router):
+              settings.router, feed.router, feed.public):
         app.include_router(r, prefix="/api/v1")
 
     @app.get("/api/v1/health", tags=["system"])

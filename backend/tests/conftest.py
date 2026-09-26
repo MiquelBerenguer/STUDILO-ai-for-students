@@ -15,6 +15,7 @@ tasks:
   course_memory: { provider: scripted, model: mid }
   exam_generation: { provider: scripted, model: strong }
   exam_verification: { provider: scripted, model: mid }
+  course_qa: { provider: scripted, model: mid }
   embeddings: { provider: local, model: hashing-384 }
 pricing:
   cheap: { input: 0.1, output: 0.4 }

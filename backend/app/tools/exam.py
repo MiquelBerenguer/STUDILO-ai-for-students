@@ -120,7 +120,9 @@ def get_exam_scope_tool(ctx: ToolContext, _a: NoArgs) -> dict[str, object]:
         "exam": None if exam is None else {"title": exam.title, "date": exam.exam_date.isoformat(),
                                            "days_left": (exam.exam_date - ctx.now.date()).days,
                                            "scope_note": exam.scope_note},
-        "requirements": {"practice_exams": ctx.state["n_exams"], "questions_per_exam": ctx.state["n_questions"]},
+        "requirements": {"practice_exams": ctx.state["n_exams"], "questions_per_exam": ctx.state["n_questions"],
+                         "focus": ctx.state.get("focus") or None,
+                         "duration_minutes_per_exam": ctx.state.get("duration_minutes")},
         "topics": topic_rows,
         "course_memory": {"pace": mem.syllabus_position, "topics_per_week": mem.topics_per_week,
                           "missed_sessions": [s.session_date.isoformat() for s in missed],
@@ -243,7 +245,9 @@ def save_exam_pack_tool(ctx: ToolContext, a: SaveArgs) -> dict[str, object]:
         raise ToolError("Exam pack is not complete: " + "; ".join(problems))
     for meta in a.practice_exams:
         if meta.number in practices:
-            practices[meta.number].title, practices[meta.number].duration_minutes = meta.title, meta.duration_minutes
+            # a duration the student asked for ("1h exam") is binding; otherwise the agent's estimate is used
+            practices[meta.number].title = meta.title
+            practices[meta.number].duration_minutes = ctx.state.get("duration_minutes") or meta.duration_minutes
     transition(EXAM_PACK, pack, "ready")
     pack.built_at = utcnow()
     return {"pack_id": pack.id, "state": pack.state, "study_guide_sections": len(guide), "practice_exams": n_exams}

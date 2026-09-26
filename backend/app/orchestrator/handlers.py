@@ -6,11 +6,12 @@ import logging
 from datetime import date, timedelta
 from typing import Any
 
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
-from app.agents.base import AgentTrace, ToolContext
+from app.agents.base import AgentTrace, ToolContext, load_prompt
 from app.agents.ingestion import IngestionAgent
-from app.agents.llm_agents import CourseMemoryAgent, ExamAgent, NotesAgent
+from app.agents.llm_agents import CourseMemoryAgent, ExamAgent, NotesAgent, QAAgent
 from app.config.brand import get_brand
 from app.config.settings import get_settings
 from app.db.base import utcnow
@@ -19,6 +20,7 @@ from app.db.models import (
     ClassSession,
     ClassSlot,
     Course,
+    CourseMemory,
     Exam,
     ExamPack,
     NoteSection,
@@ -29,6 +31,7 @@ from app.db.models import (
     User,
 )
 from app.llm.types import LLMUnavailable
+from app.orchestrator import actions, cards
 from app.orchestrator.events import emit, once
 from app.orchestrator.state_machines import CLASS_SESSION, EXAM_PACK, UPLOAD, transition
 from app.orchestrator.timeutil import local_dt, local_today
@@ -73,11 +76,20 @@ async def handle_class_ended(ctx: ToolContext, payload: dict[str, Any]) -> dict[
     trace.decision("session_state", {"session_id": session.id, "state": session.state})
     if session.state == "awaiting_upload":
         await trace.call(PLANNER_TOOLS["create_reminder"], {
-            "kind": "upload_prompt", "title": f"{course.name} just ended — upload your notes",
-            "body": f"Class of {d.strftime('%A %d %B')} ({slot.start_time}–{slot.end_time}). "
-                    f"Upload a PDF, photos or typed text and {get_brand().name} will merge them into your notes.",
-            "link": f"/upload?session={session.id}", "data": {"session_id": session.id, "course_id": course.id},
+            "kind": "upload_prompt", "title": f"Your {course.name} class ended — drop your notes here",
+            "body": f"Class of {d.strftime('%A %d %B')} ({slot.start_time}–{slot.end_time}). A PDF, photos or typed "
+                    f"text: {get_brand().name} files them into your notes.",
+            "link": f"/upload?session={session.id}",
+            "data": {"session_id": session.id, "course_id": course.id,
+                     "ends_at": session.ends_at.isoformat() if session.ends_at else None},
+            "actions": [cards.action("drop_notes", "Drop notes", "upload", primary=True,
+                                     params={"course_id": course.id, "class_session_id": session.id, "kind": "notes"}),
+                        cards.action("dismiss", "Not today")],
+            "dedupe_key": f"upload_prompt:{session.id}",
         })
+        asked = cards.ask_exam_date(ctx.db, course)
+        if asked is not None:
+            trace.decision("ask_exam_date", {"course": course.name, "card_id": asked.id})
         run_after = (session.ends_at or ctx.now) + timedelta(hours=user.missed_after_hours)
         await trace.call(PLANNER_TOOLS["schedule_job"], {"type": "check_missed_upload",
                                                          "payload": {"session_id": session.id},
@@ -106,11 +118,17 @@ async def handle_missed_upload(ctx: ToolContext, payload: dict[str, Any]) -> dic
         return {"skipped": True}
     flag = {t.name: t for t in memory_tools()}["flag_missed_session"]
     await trace.call(flag, {"session_id": session.id, "reason": "no notes uploaded after the class"})
+    cards.resolve_matching(ctx.db, ("upload_prompt",), session_id=session.id)
     await trace.call(PLANNER_TOOLS["create_reminder"], {
-        "kind": "reminder", "title": f"No notes yet for {course.name} ({session.session_date:%a %d %b})",
-        "body": "This class is flagged as missed in your course memory. Upload notes (yours or a classmate's) "
-                "whenever you can — the flag clears automatically.",
+        "kind": "missed_class", "title": f"You missed {session.session_date:%A}'s {course.name} class",
+        "body": "No notes arrived, so I flagged it in your course memory. Want a catch-up from your notes and the "
+                "syllabus? Late notes (yours or a classmate's) clear the flag.",
         "link": f"/upload?session={session.id}", "data": {"session_id": session.id, "course_id": course.id},
+        "actions": [cards.action("catch_up", "Catch me up", primary=True),
+                    cards.action("drop_notes", "Upload late notes", "upload",
+                                 params={"course_id": course.id, "class_session_id": session.id, "kind": "notes"}),
+                    cards.action("dismiss", "Dismiss")],
+        "dedupe_key": f"missed_class:{session.id}",
     })
     trace.finish("succeeded", "session flagged as missed")
     return {"session_id": session.id, "state": session.state}
@@ -156,10 +174,14 @@ async def handle_process_upload(ctx: ToolContext, payload: dict[str, Any]) -> di
         if upload.state == "extracting":
             _set_upload(ctx, upload, "classifying")
         session = _session_for_upload(ctx, upload)
+        effects = store.fx(ctx.state)
+        effects.update(actions.snapshot_session_and_memory(ctx.db, session, upload.course_id), upload_id=upload.id)
         if CLASS_SESSION.can(session.state, "uploaded"):
             transition(CLASS_SESSION, session, "uploaded")
         if upload.kind == "past_exam":
             _set_upload(ctx, upload, "done", "Past exam stored — used as style reference for practice exams")
+            cards.resolve_matching(ctx.db, ("past_exams_wanted",), course_id=upload.course_id)
+            ctx.db.commit()
             return {"upload_id": upload.id, "kind": "past_exam"}
 
         # --- Notes agent
@@ -174,11 +196,21 @@ async def handle_process_upload(ctx: ToolContext, payload: dict[str, Any]) -> di
             transition(CLASS_SESSION, session, "processed")
         done_msg = f"Done — merged into “{result.topic_title}”" + (" (with warnings)" if warnings else "")
         _set_upload(ctx, upload, "done", done_msg)
-        course = ctx.db.get(Course, upload.course_id)
-        await PLANNER_TOOLS["create_reminder"].invoke(ctx, {
-            "kind": "info", "title": f"Notes merged: {course.name if course else ''} → {result.topic_title}",
-            "body": notes_summary[:500] + ("\n\nWarnings: " + "; ".join(warnings) if warnings else ""),
-            "link": f"/subjects/{upload.course_id}?topic={result.topic_id}"})
+        course = store.must_get(ctx.db, Course, upload.course_id, "course")
+        how = ("handwriting/equations — transcribed with AI" if result.llm_pages else "text was clear — no AI needed to read it")
+        title = f"Filed {upload.filename} into {result.topic_title}"
+        act = actions.record_file_notes(ctx.db, upload, ctx.job_id, dict(effects), title)
+        cards.create_card(
+            ctx.db, "notes_filed", title,
+            body=f"{how[0].upper()}{how[1:]}. Updated your {course.name} course memory. " + notes_summary[:400]
+                 + ("\n\nWarnings: " + "; ".join(warnings) if warnings else ""),
+            link=f"/subjects/{upload.course_id}?topic={result.topic_id}",
+            actions=[cards.action("open", "Open notes", "link", primary=True,
+                                  href=f"/subjects/{upload.course_id}?topic={result.topic_id}"),
+                     cards.action("undo", "Undo")],
+            data={"upload_id": upload.id, "course_id": course.id, "topic_id": result.topic_id,
+                  "llm_pages": result.llm_pages}, action_id=act.id, course_id=course.id)
+        cards.ask_syllabus(ctx.db, course)
         ctx.db.commit()
         return {"upload_id": upload.id, "topic_id": result.topic_id, "llm_pages": result.llm_pages,
                 "warnings": warnings}
@@ -216,6 +248,7 @@ async def _run_notes(ctx: ToolContext, upload: Upload, topic_id: str | None, top
         topic = store.must_get(ctx.db, Topic, topic_id, "topic")
         section = store.append_section(ctx.db, topic, f"Notes from {upload.created_at:%d %b %Y} ({upload.filename})",
                                        upload.extracted_md, [upload.id])
+        store.fx(ctx.state)["created_sections"].append(section.id)
         await store.reindex_section(ctx.db, ctx.user_id, section)
         warnings.append("notes were added verbatim (agent fallback)")
         summary = summary or f"Added the upload verbatim to {topic.title}."
@@ -261,17 +294,25 @@ async def handle_build_exam_pack(ctx: ToolContext, payload: dict[str, Any]) -> d
                     trigger=str(trigger), notes_cutoff=utcnow(), job_id=ctx.job_id)
     ctx.db.add(pack)
     ctx.db.flush()
-    for n in range(1, s.EXAM_PACK_PRACTICE_EXAMS + 1):
-        ctx.db.add(PracticeExam(pack_id=pack.id, number=n, title=f"Practice exam {n}"))
+    # On-demand requests from the command bar ("make me a 1h exam on entropy") carry focus + duration.
+    focus = str(payload.get("focus") or "").strip()[:120]
+    duration = int(payload["duration_minutes"]) if payload.get("duration_minutes") else None
+    n_exams = int(payload.get("n_exams") or s.EXAM_PACK_PRACTICE_EXAMS)
+    n_questions = max(2, min(8, duration // 20)) if duration else s.EXAM_PACK_QUESTIONS_PER_EXAM
+    for n in range(1, n_exams + 1):
+        ctx.db.add(PracticeExam(pack_id=pack.id, number=n, title=f"Practice exam {n}", duration_minutes=duration or 90))
     transition(EXAM_PACK, pack, "building")
     ctx.db.commit()
-    ctx.state.update(pack_id=pack.id, course_id=course.id, n_exams=s.EXAM_PACK_PRACTICE_EXAMS,
-                     n_questions=s.EXAM_PACK_QUESTIONS_PER_EXAM)
+    ctx.state.update(pack_id=pack.id, course_id=course.id, n_exams=n_exams, n_questions=n_questions, focus=focus,
+                     duration_minutes=duration)
     ctx.progress(f"Building exam pack v{pack.version} for {course.name}…")
     goal = (f"Build Exam Pack v{pack.version} for subject {course.name!r}"
             + (f", exam {exam.title!r} on {exam.exam_date.isoformat()}" if exam else " (on-demand practice exam)")
-            + f". Trigger: {trigger}. Requirements: {s.EXAM_PACK_PRACTICE_EXAMS} practice exams × "
-              f"{s.EXAM_PACK_QUESTIONS_PER_EXAM} verified questions, plus a study guide. Start with get_exam_scope.")
+            + f". Trigger: {trigger}. Requirements: {n_exams} practice exam(s) × "
+              f"{n_questions} verified questions, plus a study guide."
+            + (f" FOCUS the questions and the guide on: {focus}." if focus else "")
+            + (f" Each practice exam must take about {duration} minutes." if duration else "")
+            + " Start with get_exam_scope.")
     try:
         res = await ExamAgent().run(ctx, goal)
     except Exception as exc:
@@ -282,10 +323,22 @@ async def handle_build_exam_pack(ctx: ToolContext, payload: dict[str, Any]) -> d
     if res.finished_by != "save_exam_pack" or pack.state != "ready":
         _fail_pack(ctx, pack.id, f"exam agent ended with state {res.state} before saving the pack")
         raise JobFailed(f"Exam agent did not complete the pack (state {res.state})")
-    await PLANNER_TOOLS["create_reminder"].invoke(ctx, {
-        "kind": "exam_pack", "title": f"Exam Pack ready: {exam.title if exam else course.name} (v{pack.version})",
-        "body": f"Study guide + {s.EXAM_PACK_PRACTICE_EXAMS} practice exams with solutions, built from your notes.",
-        "link": f"/packs/{pack.id}", "data": {"pack_id": pack.id}})
+    if exam:
+        days = (exam.exam_date - local_today(ctx.now, _user(ctx.user_id).timezone)).days
+        title = (f"{exam.title} in {days} days. I refreshed your Exam Pack with this week's notes." if pack.version > 1
+                 else f"{exam.title} in {days} days. I built your Exam Pack.")
+    elif focus or duration:
+        title = f"Your {f'{duration}-min ' if duration else ''}{course.name} exam{f' on {focus}' if focus else ''} is ready."
+    else:
+        title = f"Your {course.name} practice exam is ready."
+    act = actions.record_pack(ctx.db, pack, ctx.job_id, title)
+    cards.create_card(
+        ctx.db, "exam_pack_ready", title,
+        body=f"Study guide + {n_exams} practice exam(s) with worked solutions, each question verified against "
+             "your notes.",
+        link=f"/packs/{pack.id}", data={"pack_id": pack.id, "exam_id": exam.id if exam else None},
+        actions=[cards.action("open", "Open pack", "link", primary=True, href=f"/packs/{pack.id}"),
+                 cards.action("undo", "Undo")], action_id=act.id, course_id=course.id)
     ctx.db.commit()
     return {"pack_id": pack.id, "version": pack.version}
 
@@ -298,7 +351,96 @@ def _fail_pack(ctx: ToolContext, pack_id: str, error: str) -> None:
         ctx.db.commit()
 
 
+# ------------------------------------------------------------------ catch-up (missed class)
+class CatchUp(BaseModel):
+    likely_topics: list[str] = Field(default_factory=list, max_length=4)
+    summary_md: str = Field(min_length=1, max_length=4000)
+    cited_section_ids: list[str] = Field(default_factory=list, max_length=12)
+
+
+async def handle_catch_up(ctx: ToolContext, payload: dict[str, Any]) -> dict[str, Any]:
+    """One structured LLM call grounded in syllabus, memory and existing notes; the result is a feed card."""
+    session = store.must_get(ctx.db, ClassSession, payload.get("session_id"), "session")
+    course = store.must_get(ctx.db, Course, session.course_id, "course")
+    sections = list(ctx.db.scalars(select(NoteSection).where(NoteSection.course_id == course.id)
+                                   .order_by(NoteSection.updated_at.desc()).limit(25)))
+    if not sections and not course.syllabus.strip():
+        raise JobFailed(f"I don't have notes or a syllabus for {course.name} yet, so I can't guess what was covered. "
+                        "Paste the syllabus or upload a classmate's notes.")
+    version, prompt = load_prompt("catch_up")
+    trace = AgentTrace(ctx, "catch_up", "llm", f"Catch-up for {course.name} on {session.session_date:%a %d %b}",
+                       task="course_memory", prompt_version=f"catch_up@v{version}")
+    around = list(ctx.db.scalars(select(ClassSession).where(ClassSession.course_id == course.id,
+                                                            ClassSession.id != session.id)
+                                 .order_by(ClassSession.session_date)))
+    before = [x for x in around if x.session_date < session.session_date][-2:]
+    after = [x for x in around if x.session_date > session.session_date][:2]
+    mem = ctx.db.scalar(select(CourseMemory).where(CourseMemory.course_id == course.id))
+    material = (
+        f"COURSE: {course.name}\nMISSED CLASS: {session.session_date:%A %d %B %Y}\n"
+        f"SYLLABUS:\n{course.syllabus[:3000] or '(none)'}\n"
+        f"COURSE MEMORY: {mem.syllabus_position if mem else ''} {mem.pace_note if mem else ''}\n"
+        + "".join(f"CLASS BEFORE ({x.session_date}): {x.summary_md[:600]}\n" for x in before)
+        + "".join(f"CLASS AFTER ({x.session_date}): {x.summary_md[:600]}\n" for x in after)
+        + "NOTE SECTIONS:\n" + "".join(f"[{x.id}] {x.heading}: {x.content_md[:500]}\n" for x in sections))
+    trace.step("tool", "gather_material", {"session_id": session.id},
+               {"sections": len(sections), "classes_before": len(before), "classes_after": len(after),
+                "has_syllabus": bool(course.syllabus.strip())})
+    ctx.db.commit()
+    result, resps = await ctx.llm.structured("course_memory", [{"role": "system", "content": prompt},
+                                                               {"role": "user", "content": material}],
+                                             CatchUp, ctx=ctx.call_ctx(), reason="catch-up for a missed class")
+    for r in resps:
+        trace.llm(r)
+    if result is None:
+        trace.finish("failed", error="model returned invalid output twice")
+        raise JobFailed("The model returned an invalid catch-up twice.")
+    valid_ids = {x.id for x in sections}
+    cited = [sid for sid in result.cited_section_ids if sid in valid_ids]
+    topics_txt = ", ".join(result.likely_topics) or "nothing I can tell from your material"
+    card = cards.create_card(
+        ctx.db, "catch_up_ready", f"Catch-up for {course.name}, {session.session_date:%a %d %b}: probably {topics_txt}",
+        body=result.summary_md, data={"session_id": session.id, "course_id": course.id,
+                                      "likely_topics": result.likely_topics, "cited_section_ids": cited},
+        actions=[cards.action("dismiss", "Got it", primary=True)], course_id=course.id,
+        dedupe_key=f"catch_up_ready:{session.id}:{ctx.job_id}")
+    trace.finish("succeeded", f"likely covered: {topics_txt}")
+    ctx.db.commit()
+    return {"card_id": card.id, "likely_topics": result.likely_topics}
+
+
+# ------------------------------------------------------------------ questions from the command bar
+async def handle_answer_question(ctx: ToolContext, payload: dict[str, Any]) -> dict[str, Any]:
+    question = str(payload.get("question") or "").strip()
+    course = ctx.db.get(Course, payload["course_id"]) if payload.get("course_id") else None
+    ctx.state.update(course_id=course.id if course else None)
+    scope = f"Course: {course.name}." if course else "Any of the student's courses."
+    dates = ""
+    if payload.get("since") or payload.get("until"):
+        dates = f" Date range: {payload.get('since') or '…'} to {payload.get('until') or '…'}."
+    res = await QAAgent().run(ctx, f"QUESTION: {question}\n{scope}{dates} Today is {ctx.now.date().isoformat()}.")
+    if res.finished_by != "answer" or not isinstance(res.terminal_result, dict):
+        raise JobFailed(f"The Q&A agent ended with state {res.state} without an answer")
+    ans = res.terminal_result
+    citations: dict[str, dict[str, str]] = {}
+    for sid in ans.get("cited_section_ids", []):
+        sec = ctx.db.get(NoteSection, sid)
+        topic = ctx.db.get(Topic, sec.topic_id) if sec else None
+        if sec and topic:
+            citations[sid] = {"topic_id": topic.id, "topic_title": topic.title, "heading": sec.heading,
+                              "course_id": sec.course_id}
+    card = cards.create_card(
+        ctx.db, "answer", question[:200], body=ans["answer_md"],
+        data={"question": question, "citations": citations, "cited_session_ids": ans.get("cited_session_ids", []),
+              "run_id": res.run_id}, course_id=course.id if course else None,
+        actions=[cards.action("dismiss", "Got it", primary=True)])
+    ctx.db.commit()
+    return {"card_id": card.id, "run_id": res.run_id}
+
+
 HANDLERS = {
+    "catch_up": handle_catch_up,
+    "answer_question": handle_answer_question,
     "class_ended": handle_class_ended,
     "check_missed_upload": handle_check_missed,
     "missed_upload": handle_missed_upload,

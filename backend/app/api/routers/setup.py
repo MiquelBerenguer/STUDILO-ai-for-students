@@ -21,6 +21,7 @@ from app.api.schemas import (
 )
 from app.db.engine import system_session_ctx
 from app.db.models import Assignment, ClassSlot, Course, CourseMemory, Exam, User
+from app.orchestrator import cards
 from app.orchestrator.state_machines import JOURNEY, transition
 
 router = APIRouter(tags=["setup"])
@@ -134,11 +135,8 @@ def list_exams(db: DB) -> list[Exam]:
 
 @router.post("/exams", response_model=ExamOut, status_code=201)
 def create_exam(body: ExamIn, db: DB) -> Exam:
-    get_or_404(db, Course, body.course_id)
-    exam = Exam(**body.model_dump())
-    db.add(exam)
-    db.flush()
-    return exam
+    course = get_or_404(db, Course, body.course_id)
+    return cards.create_exam_with_followups(db, course, body.exam_date, body.title, body.scope_note)
 
 
 @router.patch("/exams/{exam_id}", response_model=ExamOut)
