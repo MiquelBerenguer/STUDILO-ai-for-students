@@ -18,7 +18,7 @@ product contradiction. `CLAUDE.md` and `.cursor/rules/backend.mdc` are rewritten
   (`scheduler.tick(now)`). It is simpler, and tests can drive it with an injected clock.
 
 ## D-03 — SQLite + sqlite-vec instead of Postgres + Qdrant; local disk instead of MinIO
-- One file (`data/studilo.db`) plus `data/uploads/<user_id>/…`. Zero services to run.
+- One file (`data/app.db`) plus `data/uploads/<user_id>/…`. Zero services to run.
 - Vectors live in a `vec0` virtual table with `user_id` as a **partition key**. The KNN query
   itself is constrained by user, so unscoped retrieval is impossible, not merely filtered afterwards.
 - WAL mode plus a single writer worker keeps concurrency manageable.
@@ -118,3 +118,29 @@ embeddings), so write locks are held for milliseconds.
 ## D-19 — The domain term is "practice exam" (the brief's "mock exam")
 Renamed in code, API and UI, so that `grep -i "mock|fake|dummy|lorem"` over production code is a
 meaningful check. Any hit now means real placeholder data.
+
+## D-20 — Product name lives in `config/brand.json`; internal identifiers are brand-neutral
+- `config/brand.json` (`name`, `tagline`, `slug`) is the only place the product name is written. The
+  backend reads it via `app/config/brand.py` (FastAPI title, startup messages, agent prompts through a
+  `{brand}` placeholder, notification text). The frontend imports the same file (`frontend/src/brand.ts`),
+  and a small Vite plugin injects it into `index.html` (`%BRAND_NAME%`).
+- A JSON file rather than `brand.ts` + a Python constant: two constants would drift. JSON is readable
+  natively by both languages.
+- Internal identifiers were made **brand-neutral** instead of renamed to "novi", so the next rename
+  does not touch them: cookie `session` (was `studilo_session`; renaming again would log everyone
+  out), loggers use `__name__`, the default DB file is `data/app.db`, packages are `backend` /
+  `frontend`, the DOM event is `app:unauthorized`.
+- **Intentional leftovers of "studilo"** (not renamed, low value or risky):
+  - git branch `studilo-v1` and the GitHub repo `STUDILO-ai-for-students`: renaming needs the owner
+    (remote settings, open links).
+  - the local folder path `…/Studilo/TUTOR-IA/…` on the owner's machine.
+  - historical documents describing the past: `docs/DEVIN-PIVOT-AUDIT.md`, old `CHANGELOG.md`
+    entries, and "(formerly Studilo)" notes in `PLAN.md`, `README.md`, `docs/SYSTEM_WALKTHROUGH.md`.
+  - the owner's local, gitignored `.env` still has `DATABASE_URL=sqlite:///./data/studilo.db`. It keeps
+    working; not edited because `.env` holds secrets and is the owner's file.
+- Changing the tagline or name: edit `config/brand.json`, rebuild the frontend. Prompts pick it up on the
+  next run.
+
+## D-21 — The design reference is committed
+`design/reference/` (Figma Make export, ~190 KB without `node_modules`) is small, so it is committed for
+future comparison; its `node_modules/` is gitignored. It is reference material only: nothing imports it.

@@ -27,3 +27,6 @@ Thumbs.db
 .vs/
 *.swp
 *.log
+
+# Design reference dependencies
+design/reference/node_modules/

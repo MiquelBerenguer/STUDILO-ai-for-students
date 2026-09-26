@@ -15,7 +15,7 @@ from app.db.models import User
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 # Constant-time-ish login: always run bcrypt even when the email does not exist.
-_TIMING_HASH = hash_password("studilo-timing-equaliser")
+_TIMING_HASH = hash_password("timing-equaliser")
 
 
 def _set_cookie(resp: Response, token: str) -> None:
@@ -49,10 +49,10 @@ def login(body: LoginIn, response: Response) -> User:
 
 
 @router.post("/logout", status_code=204)
-def logout(response: Response, studilo_session: Annotated[str | None, Cookie(alias=COOKIE_NAME)] = None) -> None:
-    if studilo_session:
+def logout(response: Response, session_token: Annotated[str | None, Cookie(alias=COOKIE_NAME)] = None) -> None:
+    if session_token:
         with system_session_ctx() as db:
-            revoke_session(db, studilo_session)
+            revoke_session(db, session_token)
     response.delete_cookie(COOKIE_NAME, path="/")
 
 

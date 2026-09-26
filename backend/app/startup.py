@@ -7,6 +7,7 @@ import sys
 from alembic import command
 from alembic.config import Config
 
+from app.config.brand import get_brand
 from app.config.models_config import ConfigError, get_models_store, validate_models_config
 from app.config.settings import BACKEND_DIR, Settings, get_settings
 
@@ -36,9 +37,9 @@ def main() -> int:
     try:
         validate_settings(get_settings())
     except ConfigError as exc:
-        print(f"\n[studilo] Configuration error:\n{exc}\n", file=sys.stderr)
+        print(f"\n[{get_brand().name}] Configuration error:\n{exc}\n", file=sys.stderr)
         return 1
-    print("[studilo] configuration OK")
+    print(f"[{get_brand().name}] configuration OK")
     return 0
 
 

@@ -55,6 +55,76 @@ wheels = [
 ]
 
 [[package]]
+name = "backend"
+version = "1.0.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "alembic" },
+    { name = "bcrypt" },
+    { name = "email-validator" },
+    { name = "fastapi" },
+    { name = "fastembed" },
+    { name = "ftfy" },
+    { name = "httpx" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "opencv-python-headless" },
+    { name = "pillow" },
+    { name = "pillow-heif" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "pymupdf" },
+    { name = "python-multipart" },
+    { name = "pyyaml" },
+    { name = "rapidocr-onnxruntime" },
+    { name = "ruamel-yaml" },
+    { name = "sqlalchemy" },
+    { name = "sqlite-vec" },
+    { name = "uvicorn", extra = ["standard"] },
+    { name = "wordfreq" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "alembic", specifier = ">=1.20.0" },
+    { name = "bcrypt", specifier = ">=5.0.0" },
+    { name = "email-validator", specifier = ">=2.3.0" },
+    { name = "fastapi", specifier = ">=0.141.1" },
+    { name = "fastembed", specifier = ">=0.8.0" },
+    { name = "ftfy", specifier = ">=6.3.1" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "numpy", specifier = ">=2.4.6" },
+    { name = "opencv-python-headless", specifier = ">=5.0.0.93" },
+    { name = "pillow", specifier = ">=12.3.0" },
+    { name = "pillow-heif", specifier = ">=1.7.0" },
+    { name = "pydantic", specifier = ">=2.13.5" },
+    { name = "pydantic-settings", specifier = ">=2.15.0" },
+    { name = "pymupdf", specifier = ">=1.28.2" },
+    { name = "python-multipart", specifier = ">=0.0.32" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "rapidocr-onnxruntime", specifier = ">=1.4.4" },
+    { name = "ruamel-yaml", specifier = ">=0.19.1" },
+    { name = "sqlalchemy", specifier = ">=2" },
+    { name = "sqlite-vec", specifier = ">=0.1.9" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.53.0" },
+    { name = "wordfreq", specifier = ">=3.1.1" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.1.1" },
+    { name = "pytest-asyncio", specifier = ">=1.4.0" },
+    { name = "ruff", specifier = ">=0.16.8" },
+]
+
+[[package]]
 name = "bcrypt"
 version = "5.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1215,76 +1285,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b5/b4/205b0d5241d934e8add0c38aa924c4f9fb7330834ff11e5444db964ec3f9/starlette-1.6.0.tar.gz", hash = "sha256:d4e3ac5e546444960c710297a3c9fc3f7ebae1b7e963f3d36173b49da535be9b", size = 2716969, upload-time = "2026-08-08T18:27:57.512Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c8/cb/6a6a47d5b464bd08695d254f3da6e7986cc70c9fa5d778eda57538edfe56/starlette-1.6.0-py3-none-any.whl", hash = "sha256:a86dd39d14bb45f85a3d18525215a9ef0cfd1f192ac793220e72598c90335f0c", size = 75969, upload-time = "2026-08-08T18:27:56.196Z" },
-]
-
-[[package]]
-name = "studilo-backend"
-version = "1.0.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "alembic" },
-    { name = "bcrypt" },
-    { name = "email-validator" },
-    { name = "fastapi" },
-    { name = "fastembed" },
-    { name = "ftfy" },
-    { name = "httpx" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "opencv-python-headless" },
-    { name = "pillow" },
-    { name = "pillow-heif" },
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-    { name = "pymupdf" },
-    { name = "python-multipart" },
-    { name = "pyyaml" },
-    { name = "rapidocr-onnxruntime" },
-    { name = "ruamel-yaml" },
-    { name = "sqlalchemy" },
-    { name = "sqlite-vec" },
-    { name = "uvicorn", extra = ["standard"] },
-    { name = "wordfreq" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "alembic", specifier = ">=1.20.0" },
-    { name = "bcrypt", specifier = ">=5.0.0" },
-    { name = "email-validator", specifier = ">=2.3.0" },
-    { name = "fastapi", specifier = ">=0.141.1" },
-    { name = "fastembed", specifier = ">=0.8.0" },
-    { name = "ftfy", specifier = ">=6.3.1" },
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "numpy", specifier = ">=2.4.6" },
-    { name = "opencv-python-headless", specifier = ">=5.0.0.93" },
-    { name = "pillow", specifier = ">=12.3.0" },
-    { name = "pillow-heif", specifier = ">=1.7.0" },
-    { name = "pydantic", specifier = ">=2.13.5" },
-    { name = "pydantic-settings", specifier = ">=2.15.0" },
-    { name = "pymupdf", specifier = ">=1.28.2" },
-    { name = "python-multipart", specifier = ">=0.0.32" },
-    { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "rapidocr-onnxruntime", specifier = ">=1.4.4" },
-    { name = "ruamel-yaml", specifier = ">=0.19.1" },
-    { name = "sqlalchemy", specifier = ">=2" },
-    { name = "sqlite-vec", specifier = ">=0.1.9" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.53.0" },
-    { name = "wordfreq", specifier = ">=3.1.1" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=9.1.1" },
-    { name = "pytest-asyncio", specifier = ">=1.4.0" },
-    { name = "ruff", specifier = ">=0.16.8" },
 ]
 
 [[package]]

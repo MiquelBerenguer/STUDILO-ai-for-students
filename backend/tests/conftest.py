@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import secrets
 from collections.abc import Iterator
 from pathlib import Path
@@ -55,7 +54,6 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     run_migrations()
     adapter = ScriptedAdapter()
     set_llm(LLMClient(adapters={"scripted": adapter}, extra_providers={"scripted": SCRIPTED}))
-    os.environ["_STUDILO_TEST"] = "1"
     yield tmp_path
     set_llm(None)
     engine.dispose()

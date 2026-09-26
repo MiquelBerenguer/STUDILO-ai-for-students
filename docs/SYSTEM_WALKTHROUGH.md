@@ -1,4 +1,7 @@
-# Studilo v1 — System walkthrough
+# Novi (formerly Studilo) v1 — System walkthrough
+
+> Product renamed to **Novi** on 2026-09-26; the name lives in `config/brand.json`. This walkthrough describes
+> the v1 snapshot below; for later changes see `CHANGELOG.md`.
 
 Snapshot of branch `studilo-v1` at commit `fb05a3e` (2026-09-24). All paths are relative to the repo root.
 Paths starting with `app/` or `tests/` are under `backend/`.
@@ -31,9 +34,9 @@ run above the ingestion layer has only been exercised against the test-only scri
 
 ## 1. Executive summary
 
-Studilo is a local-first web app for engineering students. The student:
+Novi is a local-first web app for engineering students. The student:
 1. Registers and configures subjects, a weekly class schedule, semester dates and exam dates.
-2. Studilo detects when a class slot ends and puts an "upload your notes" prompt in an in-app inbox.
+2. Novi detects when a class slot ends and puts an "upload your notes" prompt in an in-app inbox.
 3. The student uploads a PDF, photos, or text. A deterministic router extracts the content. It uses
    a text layer, then local OCR, and a vision LLM only when needed.
 4. An LLM **Notes agent** merges the content into per-topic notes, with sources.
@@ -57,7 +60,7 @@ flowchart LR
     RT[Ingestion router: PyMuPDF, legibility, RapidOCR]
     LLM[LLMClient + embeddings]
   end
-  DB[(SQLite data/studilo.db + sqlite-vec)]
+  DB[(SQLite data/app.db + sqlite-vec)]
   FS[(data/uploads/user_id/...)]
   CFG[[backend/config/models.yaml + .env]]
   P1[(Google Gemini API)]
@@ -291,7 +294,7 @@ flowchart TD
 ## 5. API endpoints
 
 All endpoints are mounted under `/api/v1` (`app/main.py:44`).
-- **Auth "yes"** means the HttpOnly `studilo_session` cookie is required, resolved by `app/api/deps.py:29`.
+- **Auth "yes"** means the HttpOnly `session` cookie is required, resolved by `app/api/deps.py:29`.
   `tests/test_auth.py::test_every_non_public_endpoint_requires_auth` enumerates the OpenAPI schema and
   asserts 401 without the cookie for every non-public route.
 - **Status.** ✅ means a test exercises the success path. 🟡 (probe) means it is only exercised as a
@@ -383,7 +386,7 @@ That code is deleted. It is still viewable in git history before `8e36787`.
   **sqlite-vec 0.1.9**. These versions were read from the installed environment.
 - The connection loads sqlite-vec, sets `foreign_keys=ON`, `journal_mode=WAL` and `busy_timeout=10000`
   (`app/db/engine.py:31-39`).
-- **Why:** D-03, quoted: "One file (`data/studilo.db`) plus `data/uploads/<user_id>/…`. Zero services to run."
+- **Why:** D-03, quoted: "One file (`data/app.db`) plus `data/uploads/<user_id>/…`. Zero services to run."
   D-18: "SQLite with sync SQLAlchemy is the simplest correct choice".
 - **Trade-off:** there is a single writer. Jobs run in separate threads so a job waiting on the lock
   never blocks another job's progress (D-18, `app/orchestrator/worker.py:132-157`). The discarded alternative was
@@ -500,7 +503,7 @@ Proof: `tests/test_isolation.py`.
 ### 6.5 Files on disk
 ```
 data/                         # DATA_DIR, default ./data at the repo root (gitignored)
-├── studilo.db  (+ -wal, -shm)
+├── app.db  (+ -wal, -shm)
 ├── uploads/<user_id>/<upload_id>.<ext>   # raw uploads; ext from detected type (app/api/routers/uploads.py:22-24, 52-54)
 └── models/                   # fastembed model cache (created on first use)
 ```
@@ -560,7 +563,7 @@ Provider endpoints (`app/llm/providers.py:28-38`):
 | OLLAMA_BASE_URL | Ollama server URL (default `http://localhost:11434`) | optional; no key |
 | EMBEDDINGS_API_KEY | Key for `provider: openai` embeddings | required only if the embeddings task uses openai (`app/config/models_config.py:109-111`) |
 | APP_SECRET_KEY | HMAC key for session tokens | **required, ≥32 chars** (`app/startup.py:14-19`). `make setup` generates it (`scripts/ensure_secret.py`). |
-| DATABASE_URL | SQLite URL; relative paths resolve from the repo root (`settings.py:82-91`) | optional (default `sqlite:///./data/studilo.db`) |
+| DATABASE_URL | SQLite URL; relative paths resolve from the repo root (`settings.py:82-91`) | optional (default `sqlite:///./data/app.db`) |
 | DATA_DIR | Uploads, DB and model cache | optional |
 | COOKIE_SECURE | Secure flag on the cookie | optional (false) |
 | SESSION_TTL_DAYS | Login lifetime | optional (14) |
@@ -770,7 +773,7 @@ sequenceDiagram
   - `GET /api/v1/activity/llm-calls`
 - **SQL:**
   ```sql
-  sqlite3 data/studilo.db "select agent, state, steps, cost_usd from agent_runs order by created_at desc limit 10"
+  sqlite3 data/app.db "select agent, state, steps, cost_usd from agent_runs order by created_at desc limit 10"
   ```
   Then query `agent_steps where run_id=…`.
 

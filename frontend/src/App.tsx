@@ -42,8 +42,8 @@ export default function App() {
       qc.setQueryData(["me"], null);
       navigate(`/login?next=${encodeURIComponent(location.pathname + location.search)}`);
     };
-    window.addEventListener("studilo:unauthorized", onUnauthorized);
-    return () => window.removeEventListener("studilo:unauthorized", onUnauthorized);
+    window.addEventListener("app:unauthorized", onUnauthorized);
+    return () => window.removeEventListener("app:unauthorized", onUnauthorized);
   }, [qc, navigate, location]);
 
   if (isLoading) {

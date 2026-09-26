@@ -21,13 +21,14 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
+from app.config.brand import get_brand
 from app.config.settings import BACKEND_DIR
 from app.db.base import utcnow
 from app.db.models import AgentRun, AgentStep
 from app.llm.client import LLMClient
 from app.llm.types import CallContext, LLMResponse, Message, ToolSpec
 
-log = logging.getLogger("studilo.agents")
+log = logging.getLogger(__name__)
 PROMPTS_DIR = BACKEND_DIR / "prompts"
 MAX_TOOL_RESULT_CHARS = 12000
 
@@ -115,7 +116,7 @@ def load_prompt(name: str) -> tuple[str, str]:
             if k.strip() == "version":
                 version = v.strip()
         text = body.strip()
-    return version, text
+    return version, text.replace("{brand}", get_brand().name)
 
 
 def _jsonable(obj: Any) -> Any:

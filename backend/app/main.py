@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.api.routers import activity, auth, exams, notes, settings, setup, uploads
+from app.config.brand import get_brand
 from app.config.models_config import ConfigError
 from app.config.settings import get_settings
 from app.db.engine import get_engine
@@ -17,7 +18,7 @@ from app.orchestrator.worker import Orchestrator
 from app.startup import run_migrations, validate_settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-log = logging.getLogger("studilo")
+log = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -26,7 +27,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         validate_settings(s)
     except ConfigError as exc:
-        print(f"\n[studilo] Configuration error — refusing to start:\n{exc}\n", file=sys.stderr, flush=True)
+        print(f"\n[{get_brand().name}] Configuration error — refusing to start:\n{exc}\n", file=sys.stderr, flush=True)
         raise SystemExit(1) from exc
     run_migrations()
     orchestrator = Orchestrator() if s.ENABLE_BACKGROUND else None
@@ -38,7 +39,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app(with_lifespan: bool = True) -> FastAPI:
-    app = FastAPI(title="Studilo API", version="1.0.0", lifespan=lifespan if with_lifespan else None)
+    app = FastAPI(title=f"{get_brand().name} API", version="1.0.0", lifespan=lifespan if with_lifespan else None)
     for r in (auth.router, setup.router, uploads.router, notes.router, exams.router, activity.router,
               settings.router):
         app.include_router(r, prefix="/api/v1")

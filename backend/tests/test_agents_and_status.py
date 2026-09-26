@@ -83,7 +83,7 @@ def test_loop_runs_tools_feeds_results_back_and_stops_on_terminal(env) -> None: 
     run = db.get(AgentRun, result.run_id)
     steps = list(db.scalars(select(AgentStep).where(AgentStep.run_id == run.id).order_by(AgentStep.idx)))
     assert [s.kind for s in steps] == ["llm", "tool", "llm", "tool"]
-    assert run.llm_calls == 2 and run.prompt_version == "notes_agent@v1"
+    assert run.llm_calls == 2 and run.prompt_version == "notes_agent@v2"
     db.close()
 
 

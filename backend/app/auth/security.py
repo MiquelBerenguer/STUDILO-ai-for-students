@@ -13,7 +13,7 @@ from app.config.settings import get_settings
 from app.db.base import utcnow
 from app.db.models import AuthSession, User
 
-COOKIE_NAME = "studilo_session"
+COOKIE_NAME = "session"  # brand-neutral on purpose: renaming the product must not log everyone out
 
 
 def hash_password(password: str) -> str:

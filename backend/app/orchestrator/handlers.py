@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from app.agents.base import AgentTrace, ToolContext
 from app.agents.ingestion import IngestionAgent
 from app.agents.llm_agents import CourseMemoryAgent, ExamAgent, NotesAgent
+from app.config.brand import get_brand
 from app.config.settings import get_settings
 from app.db.base import utcnow
 from app.db.engine import system_session_ctx
@@ -35,7 +36,7 @@ from app.tools import store
 from app.tools.memory import memory_tools
 from app.tools.planner import PLANNER_TOOLS
 
-log = logging.getLogger("studilo.handlers")
+log = logging.getLogger(__name__)
 
 
 class JobFailed(RuntimeError):
@@ -74,7 +75,7 @@ async def handle_class_ended(ctx: ToolContext, payload: dict[str, Any]) -> dict[
         await trace.call(PLANNER_TOOLS["create_reminder"], {
             "kind": "upload_prompt", "title": f"{course.name} just ended — upload your notes",
             "body": f"Class of {d.strftime('%A %d %B')} ({slot.start_time}–{slot.end_time}). "
-                    "Upload a PDF, photos or typed text and Studilo will merge them into your notes.",
+                    f"Upload a PDF, photos or typed text and {get_brand().name} will merge them into your notes.",
             "link": f"/upload?session={session.id}", "data": {"session_id": session.id, "course_id": course.id},
         })
         run_after = (session.ends_at or ctx.now) + timedelta(hours=user.missed_after_hours)

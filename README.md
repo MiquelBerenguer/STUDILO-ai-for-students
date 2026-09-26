@@ -1,10 +1,13 @@
-# Studilo v1
+# Novi
 
-A local-first, multi-agent study assistant for engineering students. Studilo works like a second
+> Provisional product name. It is defined once in `config/brand.json` (shared by backend and frontend);
+> change it there. Formerly called Studilo.
+
+A local-first, multi-agent study assistant for engineering students. Novi works like a second
 student who follows the course with you:
 
 1. You set up your subjects, weekly schedule, semester and exam dates.
-2. When a class ends, Studilo asks for that class's notes (in-app inbox and browser notification).
+2. When a class ends, Novi asks for that class's notes (in-app inbox and browser notification).
 3. You upload a PDF, phone photos, scans or typed text. A **deterministic-first router** reads them
    (text layer → local OCR → vision model only when needed).
 4. Agents merge the content into structured **topic notes** (every section links to its source) and

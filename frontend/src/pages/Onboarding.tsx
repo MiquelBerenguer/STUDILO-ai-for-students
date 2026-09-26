@@ -7,11 +7,12 @@ import { useMe } from "../App";
 import { CoursesEditor, ExamsEditor, ProfileEditor, ScheduleEditor, useCourses } from "../components/editors";
 import { ErrorBox } from "../components/ui";
 import type { Me, Slot } from "../types";
+import { BRAND } from "../brand";
 
 const STEPS = [
   { title: "Your subjects", hint: "What are you studying this semester?" },
-  { title: "Weekly schedule", hint: "When are your classes? Studilo asks for notes when each one ends." },
-  { title: "Semester dates", hint: "Studilo only follows classes inside the semester." },
+  { title: "Weekly schedule", hint: `When are your classes? ${BRAND.name} asks for notes when each one ends.` },
+  { title: "Semester dates", hint: `${BRAND.name} only follows classes inside the semester.` },
   { title: "Exam dates", hint: "Exam packs are built automatically 14, 7 and 3 days before. You can skip this." },
 ];
 
@@ -35,8 +36,8 @@ export default function Onboarding() {
 
   return (
     <div className="mx-auto max-w-3xl p-4 md:p-10">
-      <h1 className="text-2xl font-bold text-indigo-700">Welcome to Studilo</h1>
-      <p className="text-sm text-slate-500">Four quick steps and Studilo starts following your courses.</p>
+      <h1 className="text-2xl font-bold text-indigo-700">Welcome to {BRAND.name}</h1>
+      <p className="text-sm text-slate-500">Four quick steps and {BRAND.name} starts following your courses.</p>
       <div className="mt-6 flex gap-2">
         {STEPS.map((s, i) => (
           <div key={s.title} className={`h-1.5 flex-1 rounded-full ${i <= step ? "bg-indigo-600" : "bg-slate-200"}`} />

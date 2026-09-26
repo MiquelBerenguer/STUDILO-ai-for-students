@@ -26,11 +26,11 @@ class AuthedUser:
     timezone: str
 
 
-def current_user(studilo_session: Annotated[str | None, Cookie(alias=COOKIE_NAME)] = None) -> AuthedUser:
-    if not studilo_session:
+def current_user(session_token: Annotated[str | None, Cookie(alias=COOKIE_NAME)] = None) -> AuthedUser:
+    if not session_token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
     with system_session_ctx() as db:
-        user = resolve_session(db, studilo_session)
+        user = resolve_session(db, session_token)
         if user is None:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired")
         return AuthedUser(user.id, user.email, user.display_name, user.journey_state, user.timezone)

@@ -6,6 +6,7 @@ import { useMe } from "../App";
 import { useCourses } from "../components/editors";
 import { Badge, Card, daysUntil, Empty, ErrorBox, fmtDate, fmtTime, Skeleton, StateBadge } from "../components/ui";
 import type { ClassSession, Exam, ExamPack, FeedItem, Slot } from "../types";
+import { BRAND } from "../brand";
 
 export default function Today() {
   const { data: me } = useMe();
@@ -39,10 +40,10 @@ export default function Today() {
 
       {firstRun && (
         <div className="card border-indigo-200 bg-indigo-50/50">
-          <h2 className="font-semibold">How Studilo works</h2>
+          <h2 className="font-semibold">How {BRAND.name} works</h2>
           <ol className="mt-2 grid gap-3 text-sm text-slate-600 md:grid-cols-3">
             <li><b>1. After each class</b> you get a prompt: upload your notes (PDF, photo or text).</li>
-            <li><b>2. Studilo organises them</b> into topic notes and a course memory, with sources.</li>
+            <li><b>2. {BRAND.name} organises them</b> into topic notes and a course memory, with sources.</li>
             <li><b>3. Before exams</b> an Exam Pack appears: study guide + practice exams from your notes.</li>
           </ol>
         </div>

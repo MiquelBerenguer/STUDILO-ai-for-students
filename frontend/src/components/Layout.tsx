@@ -5,6 +5,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { get, post } from "../api";
 import type { Course, Me, Notification } from "../types";
 import { fmtTime } from "./ui";
+import { BRAND } from "../brand";
 
 const NAV = [
   { to: "/", label: "Today", end: true },
@@ -33,7 +34,7 @@ export default function Layout({ me }: { me: Me }) {
     <div className="flex min-h-screen flex-col md:flex-row">
       <aside className="no-print border-b border-slate-200 bg-white md:sticky md:top-0 md:h-screen md:w-60 md:border-b-0 md:border-r">
         <div className="flex items-center justify-between px-4 py-4">
-          <span className="text-xl font-bold text-indigo-700">Studilo</span>
+          <span className="text-xl font-bold text-indigo-700">{BRAND.name}</span>
           <div className="md:hidden"><Inbox /></div>
         </div>
         <nav className="flex gap-1 overflow-x-auto px-2 pb-2 md:block md:space-y-1">

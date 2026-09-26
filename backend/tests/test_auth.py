@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from app.auth.security import COOKIE_NAME
 from tests.conftest import make_client, register
 
 
@@ -22,10 +23,10 @@ def test_register_login_logout_cycle(app) -> None:  # type: ignore[no-untyped-de
 def test_logout_revokes_the_session_server_side(app) -> None:  # type: ignore[no-untyped-def]
     c = make_client(app)
     register(c, "carol@example.com")
-    token = c.cookies.get("studilo_session")
+    token = c.cookies.get(COOKIE_NAME)
     c.post("/api/v1/auth/logout")
     stolen = make_client(app)
-    stolen.cookies.set("studilo_session", token)
+    stolen.cookies.set(COOKIE_NAME, token)
     assert stolen.get("/api/v1/auth/me").status_code == 401
 
 
@@ -40,7 +41,7 @@ def test_password_is_hashed_and_duplicates_rejected(app) -> None:  # type: ignor
     with system_session_ctx() as db:
         user = db.scalar(select(User).where(User.email == "dave@example.com"))
         assert user.password_hash.startswith("$2") and "plain-text-pw" not in user.password_hash
-        token = c.cookies.get("studilo_session")
+        token = c.cookies.get(COOKIE_NAME)
         assert db.scalar(select(AuthSession).where(AuthSession.token_hash == token)) is None  # only the HMAC is stored
     assert c.post("/api/v1/auth/register", json={"email": "dave@example.com", "password": "another-pw1"}).status_code == 409
     assert c.post("/api/v1/auth/register", json={"email": "x@example.com", "password": "short"}).status_code == 422

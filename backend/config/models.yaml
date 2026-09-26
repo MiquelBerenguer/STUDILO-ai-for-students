@@ -1,4 +1,4 @@
-# Studilo model configuration. Committed; contains NO secrets (keys live in .env).
+# Model configuration. Committed; contains NO secrets (keys live in .env).
 # Swap a model by editing one line. The backend reloads this file automatically.
 # Providers: anthropic | openai | deepseek | google | openrouter | ollama | local | fastembed
 # Fallbacks are tried in order, written as provider/model.

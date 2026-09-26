@@ -5,6 +5,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { post } from "../api";
 import { ErrorBox } from "../components/ui";
 import type { Me } from "../types";
+import { BRAND } from "../brand";
 
 export default function Auth({ mode }: { mode: "login" | "register" }) {
   const [email, setEmail] = useState("");
@@ -38,7 +39,7 @@ export default function Auth({ mode }: { mode: "login" | "register" }) {
     <div className="flex min-h-screen items-center justify-center p-4">
       <form onSubmit={submit} className="card w-full max-w-sm space-y-4">
         <div>
-          <h1 className="text-2xl font-bold text-indigo-700">Studilo</h1>
+          <h1 className="text-2xl font-bold text-indigo-700">{BRAND.name}</h1>
           <p className="text-sm text-slate-500">
             {mode === "login" ? "Welcome back." : "Your second student for every course."}
           </p>

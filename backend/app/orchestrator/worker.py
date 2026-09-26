@@ -21,7 +21,7 @@ from app.llm.client import get_llm
 from app.orchestrator.handlers import HANDLERS
 from app.orchestrator.state_machines import JOB
 
-log = logging.getLogger("studilo.orchestrator")
+log = logging.getLogger(__name__)
 
 
 def claim_next(now: datetime | None = None) -> tuple[str, str] | None:

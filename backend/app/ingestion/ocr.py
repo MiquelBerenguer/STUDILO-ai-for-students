@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageOps
 
-log = logging.getLogger("studilo.ocr")
+log = logging.getLogger(__name__)
 
 try:  # HEIC support for iPhone photos
     from pillow_heif import register_heif_opener

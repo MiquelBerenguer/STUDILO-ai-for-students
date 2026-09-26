@@ -1,4 +1,4 @@
-# Studilo v1 — agent context
+# Novi v1 — agent context
 
 Local-first, multi-agent study assistant for engineering students. Monorepo: `backend/` (Python),
 `frontend/` (TypeScript). Read `PLAN.md` (layout, keep/port/delete), `DECISIONS.md` (architecture

@@ -19,7 +19,7 @@ from app.db.models import LLMCall
 from app.llm.providers import DEFAULT_ADAPTERS, Adapter, ProviderSpec, provider_specs
 from app.llm.types import CallContext, LLMError, LLMResponse, LLMUnavailable, Message, ToolSpec
 
-log = logging.getLogger("studilo.llm")
+log = logging.getLogger(__name__)
 M = TypeVar("M", bound=BaseModel)
 
 

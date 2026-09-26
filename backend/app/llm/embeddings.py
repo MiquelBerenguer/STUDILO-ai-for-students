@@ -18,7 +18,7 @@ from app.config.settings import get_settings
 from app.db.engine import user_session
 from app.db.models import LLMCall
 
-log = logging.getLogger("studilo.embeddings")
+log = logging.getLogger(__name__)
 _WORD = re.compile(r"\w+", re.U)
 
 

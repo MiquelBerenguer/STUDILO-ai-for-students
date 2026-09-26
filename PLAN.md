@@ -1,4 +1,4 @@
-# Studilo v1 — PLAN
+# Novi (formerly Studilo) v1 — PLAN
 
 This is the Phase 0 plan: what the audit confirmed, what we keep, port, or delete, and the target
 layout. The detailed audit of the previous code base is in `docs/DEVIN-PIVOT-AUDIT.md` (2026-09-21).

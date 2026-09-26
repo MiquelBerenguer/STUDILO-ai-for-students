@@ -28,7 +28,7 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown 
   const body: unknown = text ? safeJson(text) : null;
   if (!res.ok) {
     if (res.status === 401 && !path.startsWith("/auth/")) {
-      window.dispatchEvent(new CustomEvent("studilo:unauthorized"));
+      window.dispatchEvent(new CustomEvent("app:unauthorized"));
     }
     throw new ApiError(res.status, detail(body, `${res.status} ${res.statusText}`));
   }

@@ -1,6 +1,6 @@
-# Studilo v1 — UX
+# Novi v1 — UX
 
-Design goal: Studilo feels like a classmate who does the organising. The student acts mainly at two
+Design goal: Novi feels like a classmate who does the organising. The student acts mainly at two
 moments: **after class** (drop in notes) and **before exams** (open the pack). Everything else is
 proactive: inbox items, browser notifications, and an activity feed that says what the agents did,
 in plain language.
@@ -49,7 +49,7 @@ Auth screens and the onboarding wizard are full-screen and have no sidebar.
   now** button. Empty: "No exams yet — add one in Exams".
 - **Agent activity feed**: last ~15 events and agent runs in plain language, with cost or "no AI".
 - First-run empty state (just onboarded): a 3-step explainer: "After each class, upload notes →
-  Studilo organises them → exam packs appear before exams".
+  Novi organises them → exam packs appear before exams".
 
 ### 4. Upload
 - Subject selector (pre-filled from `?session=`), a "which class" selector (recent sessions of that

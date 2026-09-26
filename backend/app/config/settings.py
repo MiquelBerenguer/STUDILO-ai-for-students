@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     EMBEDDINGS_API_KEY: SecretStr | None = None
     # --- App ---
     APP_SECRET_KEY: SecretStr = Field(default=SecretStr(""))
-    DATABASE_URL: str = "sqlite:///./data/studilo.db"
+    DATABASE_URL: str = "sqlite:///./data/app.db"
     DATA_DIR: str = "./data"
     MODELS_CONFIG: str = str(BACKEND_DIR / "config" / "models.yaml")
     COOKIE_SECURE: bool = False
