@@ -6,7 +6,8 @@ import { del, get, post } from "../api";
 import { Icon } from "../components/icons";
 import { TimetableCapture, WeekPreview } from "../components/Timetable";
 import { Empty, WEEKDAYS } from "../components/ui";
-import type { Course, ExtractedSlot, Extraction, Slot } from "../types";
+import { clock } from "../hooks";
+import type { CalendarFeedT, Course, ExtractedSlot, Extraction, Slot } from "../types";
 
 export default function Schedule() {
   const { data: slots = [] } = useQuery({ queryKey: ["slots"], queryFn: () => get<Slot[]>("/slots") });
@@ -25,6 +26,7 @@ export default function Schedule() {
         </button>
       </div>
       {importing && <Import onDone={() => { setImporting(false); qc.invalidateQueries(); }} />}
+      <Calendars />
       {slots.length === 0 ? <Empty title="No classes yet">Import your timetable and I'll take it from there.</Empty> : (
         <div className="card overflow-x-auto p-4">
           <div className="grid min-w-[40rem] gap-3" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}>
@@ -73,6 +75,67 @@ function Import({ onDone }: { onDone: () => void }) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/** Connected calendars (Atenea/Moodle export): deadlines and exam events, refreshed daily. URL never shown. */
+function Calendars() {
+  const qc = useQueryClient();
+  const { data: feeds = [] } = useQuery({ queryKey: ["calendars"], queryFn: () => get<CalendarFeedT[]>("/calendars"),
+    refetchInterval: 5000 });
+  const [url, setUrl] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function connect(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await post<{ message: string }>("/calendars", { url });
+      setMsg(r.message);
+      setUrl("");
+      qc.invalidateQueries({ queryKey: ["calendars"] });
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="card">
+      <div className="section-title">Connected calendars</div>
+      <p className="mt-0.5 text-[0.72rem] text-muted">
+        Paste your Atenea calendar link (Calendar → Export calendar → Get calendar URL). I re-check it daily and turn
+        deadlines and exam dates into cards. The link is stored encrypted and never shown again.
+      </p>
+      <ul className="mt-3 space-y-2">
+        {feeds.map((f) => (
+          <li key={f.id} className="flex items-center justify-between gap-3 rounded-xl bg-canvas px-3 py-2 text-[0.74rem]">
+            <span className="min-w-0">
+              <b>{f.label}</b> <span className="text-muted">· {f.host}</span>
+              <span className="block text-muted">
+                {f.last_error ? <span className="text-red-600">{f.last_error}</span>
+                  : f.last_synced_at ? `Synced ${clock(f.last_synced_at)} · ${f.stats.new ?? 0} new, ${f.stats.updated ?? 0} updated`
+                    + (f.stats.unmatched ? ` · ${f.stats.unmatched} didn't match a course (${(f.stats.unmatched_examples ?? []).join(", ")})` : "")
+                    : "Syncing…"}
+              </span>
+            </span>
+            <button className="btn-ghost px-2 py-1" aria-label="Disconnect" onClick={async () => {
+              if (window.confirm("Stop syncing this calendar? Deadlines already imported stay.")) {
+                await del(`/calendars/${f.id}`);
+                qc.invalidateQueries({ queryKey: ["calendars"] });
+              }
+            }}><Icon name="x" className="h-4 w-4" /></button>
+          </li>
+        ))}
+      </ul>
+      <form className="mt-3 flex gap-2" onSubmit={connect}>
+        <input className="input" type="url" required value={url} onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://atenea.upc.edu/calendar/export_execute.php?…" aria-label="Calendar link" />
+        <button className="btn-primary flex-none" disabled={busy}>{busy ? "…" : "Connect"}</button>
+      </form>
+      {msg && <p className="mt-2 text-[0.72rem] text-muted">{msg}</p>}
     </div>
   );
 }

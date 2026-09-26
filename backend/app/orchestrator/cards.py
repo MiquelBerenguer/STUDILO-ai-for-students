@@ -20,7 +20,8 @@ from app.orchestrator.state_machines import CARD, transition
 
 PRIORITY = {"approval": 90, "job_failed": 85, "upload_prompt": 80, "missed_class": 75, "account_claim": 70,
             "exam_date_needed": 65, "answer": 62, "catch_up_ready": 60, "exam_pack_ready": 58,
-            "syllabus_wanted": 55, "past_exams_wanted": 52, "notes_filed": 45, "info": 40}
+            "syllabus_wanted": 55, "past_exams_wanted": 52, "notes_filed": 45, "info": 40,
+            "deadline": 64, "connect_calendar": 47, "backfill_notes": 48}
 
 DISMISS = {"id": "dismiss", "label": "Dismiss", "type": "button"}
 
@@ -94,8 +95,11 @@ def ask_syllabus(db: Session, course: Course) -> Notification | None:
         return None
     return create_card(
         db, "syllabus_wanted", f"Paste the {course.name} syllabus?",
-        body="With the list of units I can tell you where the class is and what's likely in the exam.",
-        actions=[action("save_syllabus", "Save syllabus", "text", primary=True), action("dismiss", "Skip")],
+        body="With the list of units I can tell you where the class is and what's likely in the exam. Give me the "
+             "subject code and I'll fetch it from the public UPC course guide, or paste it yourself.",
+        actions=[action("fetch_guide", "Fetch it", "input", primary=True,
+                        placeholder="UPC subject code, e.g. 300021", input_type="text"),
+                 action("save_syllabus", "Save syllabus", "text"), action("dismiss", "Skip")],
         data={"course_id": course.id}, dedupe_key=f"syllabus_wanted:{course.id}", course_id=course.id)
 
 

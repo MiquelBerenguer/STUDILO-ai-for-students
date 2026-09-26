@@ -248,6 +248,22 @@ The reference tokens are added as-is in `@theme`. Tailwind's `indigo-*` and `sla
 remapped to the reference primary/ink/muted/line colours. Subject, Exam Pack, Activity and Settings
 adopt the look without rewrites. New screens use the tokens directly.
 
+## D-35 — Calendar link stored encrypted; imported events keyed by iCal UID
+- A Moodle export URL grants read access to the student's calendar, so it is a secret. It is encrypted
+  at rest with Fernet, using a key derived from `APP_SECRET_KEY` by HKDF.
+- Only the host is stored in clear, and the API never returns the URL.
+- Rotating `APP_SECRET_KEY` makes stored links unreadable. The sync then fails with "reconnect it"
+  instead of crashing.
+- Events are matched to courses with the same fuzzy matcher as the command bar, and are never guessed:
+  unmatched events are counted and shown. Weekly RRULE events are left to the timetable import.
+- Deleting a feed stops the sync but keeps the imported deadlines (they are the student's data).
+
+## D-36 — Course guides: fixed upc.edu URL pattern, deterministic section extraction
+The guide is found by subject code at `upc.edu/content/grau/guiadocent/pdf/{ca|cat|es|en}/{code}`.
+Redirects are followed only within upc.edu. The contents section is cut deterministically, by known
+Catalan/Spanish/English headings, with workload lines removed. No LLM is involved: the guide is
+already structured text, and a model would add cost and hallucination risk for no gain.
+
 ## D-34 — UI screenshots with Playwright + system Chrome, as a dev-only script
 `scripts/ui_screens.py` walks the before/after flows and measures landing → feed time. It runs through
 `uv run --no-project --with playwright`, so Playwright is not a product dependency. It uses

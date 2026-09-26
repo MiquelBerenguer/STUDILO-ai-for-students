@@ -1,8 +1,9 @@
 // Courses (secondary view): drill into a course's notes, memory and sources.
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import { get } from "../api";
+import { get, post } from "../api";
 import { Icon } from "../components/icons";
 import { daysUntil, Empty, fmtDate } from "../components/ui";
 import type { Course, Exam } from "../types";
@@ -34,10 +35,36 @@ export default function Courses() {
                 </span>
                 <Icon name="arrow" className="h-4 w-4 text-muted" />
               </Link>
+              {!c.syllabus.trim() && <GuideFetch courseId={c.id} />}
             </li>
           );
         })}
       </ul>
     </div>
+  );
+}
+
+/** Empty syllabus → fetch it from the public UPC course guide by subject code (no AI, upc.edu only). */
+function GuideFetch({ courseId }: { courseId: string }) {
+  const [code, setCode] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const qc = useQueryClient();
+  return (
+    <form className="mb-3 ml-12 flex flex-wrap items-center gap-2 text-[0.7rem]" onSubmit={async (e) => {
+      e.preventDefault();
+      try {
+        const r = await post<{ message: string }>(`/courses/${courseId}/guide`, { code });
+        setMsg(r.message);
+        qc.invalidateQueries({ queryKey: ["courses"] });
+      } catch (err) {
+        setMsg(err instanceof Error ? err.message : String(err));
+      }
+    }}>
+      <span className="text-muted">No syllabus yet —</span>
+      <input className="input w-40 py-1 text-[0.7rem]" placeholder="UPC subject code" value={code}
+        onChange={(e) => setCode(e.target.value)} pattern="[0-9]{5,6}" required aria-label="Subject code" />
+      <button className="btn-secondary px-2.5 py-1">Fetch from course guide</button>
+      {msg && <span className="w-full text-muted">{msg}</span>}
+    </form>
   );
 }

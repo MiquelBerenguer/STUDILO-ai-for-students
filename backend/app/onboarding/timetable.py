@@ -397,11 +397,11 @@ def parse_text(text: str) -> list[SlotOut]:
 
 
 # ------------------------------------------------------------------ iCalendar
-_EXAM_WORDS = re.compile(r"\b(exam|examen|final|midterm|parcial|prova|test)\b", re.I)
+EXAM_WORDS = re.compile(r"\b(exam|examen|final|midterm|parcial|prova|test)\b", re.I)
 _BYDAY = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4, "SA": 5, "SU": 6}
 
 
-def _ics_unfold(text: str) -> list[str]:
+def ics_unfold(text: str) -> list[str]:
     out: list[str] = []
     for line in text.replace("\r\n", "\n").split("\n"):
         if line[:1] in (" ", "\t") and out:
@@ -411,7 +411,7 @@ def _ics_unfold(text: str) -> list[str]:
     return out
 
 
-def _ics_dt(value: str, params: dict[str, str], tz: ZoneInfo) -> datetime | date:
+def ics_dt(value: str, params: dict[str, str], tz: ZoneInfo) -> datetime | date:
     if params.get("VALUE") == "DATE" or re.fullmatch(r"\d{8}", value):
         return datetime.strptime(value[:8], "%Y%m%d").date()
     dt = datetime.strptime(value[:15], "%Y%m%dT%H%M%S")
@@ -425,15 +425,19 @@ def _ics_dt(value: str, params: dict[str, str], tz: ZoneInfo) -> datetime | date
     return dt.replace(tzinfo=tz)
 
 
-def _unescape(v: str) -> str:
+def ics_unescape(v: str) -> str:
     return v.replace("\\n", " ").replace("\\,", ",").replace("\\;", ";").strip()
 
 
-def parse_ics(text: str, tz_name: str) -> tuple[list[SlotOut], list[ExamOut], list[str]]:
-    tz = ZoneInfo(tz_name)
-    events: list[dict[str, tuple[str, dict[str, str]]]] = []
-    cur: dict[str, tuple[str, dict[str, str]]] | None = None
-    for line in _ics_unfold(text):
+IcsEvent = dict[str, tuple[str, dict[str, str]]]  # PROPERTY -> (value, params)
+
+
+def ics_events(text: str) -> list[IcsEvent]:
+    """VEVENT blocks as {PROPERTY: (value, params)} (unfolded lines; last occurrence of a property wins)."""
+    events: list[IcsEvent] = []
+    cur: IcsEvent | None = None
+    for line in ics_unfold(text):
+        line = line.rstrip("\r")
         if line == "BEGIN:VEVENT":
             cur = {}
         elif line == "END:VEVENT" and cur is not None:
@@ -444,30 +448,36 @@ def parse_ics(text: str, tz_name: str) -> tuple[list[SlotOut], list[ExamOut], li
             name, *raw_params = head.split(";")
             params = dict(p.split("=", 1) for p in raw_params if "=" in p)
             cur[name.upper()] = (value, params)
+    return events
+
+
+def parse_ics(text: str, tz_name: str) -> tuple[list[SlotOut], list[ExamOut], list[str]]:
+    tz = ZoneInfo(tz_name)
+    events = ics_events(text)
     slots: list[SlotOut] = []
     exams: list[ExamOut] = []
     single: dict[tuple[str, int, str, str], list[tuple[str, str]]] = {}
     warnings: list[str] = []
     for ev in events:
-        summary = _unescape(ev.get("SUMMARY", ("", {}))[0])
+        summary = ics_unescape(ev.get("SUMMARY", ("", {}))[0])
         if not summary or "DTSTART" not in ev:
             continue
-        start = _ics_dt(*ev["DTSTART"], tz)
+        start = ics_dt(*ev["DTSTART"], tz)
         if not isinstance(start, datetime):
-            if _EXAM_WORDS.search(summary):
-                exams.append(ExamOut(subject=_EXAM_WORDS.sub("", summary).strip(" -:·") or summary, title=summary,
+            if EXAM_WORDS.search(summary):
+                exams.append(ExamOut(subject=EXAM_WORDS.sub("", summary).strip(" -:·") or summary, title=summary,
                                      date=start))
             continue
-        end = _ics_dt(*ev["DTEND"], tz) if "DTEND" in ev else start + timedelta(hours=1)
+        end = ics_dt(*ev["DTEND"], tz) if "DTEND" in ev else start + timedelta(hours=1)
         if not isinstance(end, datetime):
             end = start + timedelta(hours=1)
-        room = _unescape(ev.get("LOCATION", ("", {}))[0])
-        desc = _unescape(ev.get("DESCRIPTION", ("", {}))[0])
+        room = ics_unescape(ev.get("LOCATION", ("", {}))[0])
+        desc = ics_unescape(ev.get("DESCRIPTION", ("", {}))[0])
         prof_m = _PROF_KW.search(desc)
         prof = re.split(r"[,;\n]", desc[prof_m.end():])[0].strip() if prof_m else ""
         rrule = ev.get("RRULE", ("", {}))[0]
-        if _EXAM_WORDS.search(summary) and not rrule:
-            exams.append(ExamOut(subject=_EXAM_WORDS.sub("", summary).strip(" -:·") or summary, title=summary,
+        if EXAM_WORDS.search(summary) and not rrule:
+            exams.append(ExamOut(subject=EXAM_WORDS.sub("", summary).strip(" -:·") or summary, title=summary,
                                  date=start.date()))
             continue
         s_hm, e_hm = start.strftime("%H:%M"), end.strftime("%H:%M")

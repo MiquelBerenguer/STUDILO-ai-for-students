@@ -334,8 +334,10 @@ export interface TaskMapping {
 export interface CardAction {
   id: string;
   label: string;
-  type: "button" | "link" | "upload" | "date" | "text" | "credentials";
+  type: "button" | "link" | "upload" | "date" | "text" | "credentials" | "input";
   primary?: boolean;
+  placeholder?: string;
+  input_type?: "text" | "url";
   href?: string;
   params?: Record<string, string>;
   course_choices?: { id: string; name: string }[];
@@ -436,6 +438,16 @@ export interface CommandResult {
 export interface Meta {
   brand: { name: string; tagline: string; slug: string };
   features: Record<string, boolean>;
+}
+
+export interface CalendarFeedT {
+  id: string;
+  host: string;
+  label: string;
+  last_synced_at: string | null;
+  last_error: string;
+  stats: { new?: number; updated?: number; unmatched?: number; ignored?: number; unmatched_examples?: string[] };
+  created_at: string;
 }
 
 // ------------------------------------------------------------------ onboarding (UX.md §8)

@@ -1,5 +1,28 @@
 # Changelog
 
+## v2.1 — First UPC integrations: connected calendar + course guides (2026-09-26)
+These are the two items marked **GO** in `docs/research/UPC_INTEGRATION.md`. Neither needs a password
+or an agreement with UPC.
+- **Connected calendars** (`app/integrations/calendar_feed.py`):
+  - The student pastes their Atenea/Moodle calendar export link, from a card after onboarding or from
+    Schedule → Connected calendars.
+  - The link carries a bearer token, so it is stored **encrypted** (Fernet, key derived from
+    `APP_SECRET_KEY`) and never returned or logged.
+  - A deterministic `calendar` agent re-reads the link daily (Planner trigger) and turns due/close
+    events into assignments and exam events into exams, idempotent on the iCal UID.
+  - New deadlines within 14 days become `deadline` cards (Mark done / Open course).
+  - Unmatched events are counted, with examples.
+  - A failed refresh becomes a single card that clears on the next success.
+  - The fetch is SSRF-guarded.
+- **UPC course guides** (`app/integrations/upc_guides.py`):
+  - Given a subject code, Novi downloads the public guide PDF (upc.edu only) and fills the course
+    syllabus from its CONTINGUTS/CONTENIDOS/CONTENTS section, with workload and page lines removed.
+  - Available from the syllabus card and from Courses.
+  - Checked against three real public guides, including EETAC 300021.
+- Migration `0004` (`calendar_feeds`, `external_uid` on assignments/exams, `assignments.due_at`). New
+  dependency: `cryptography`.
+- 107 backend tests (9 new, no network: fetchers are monkeypatched).
+
 ## v2 — Novi: agentic feed, 3-step onboarding, rename (2026-09-26)
 - **Rename to Novi** from one constant, `config/brand.json`, shared by backend and frontend. Internal
   identifiers are brand-neutral (D-20).

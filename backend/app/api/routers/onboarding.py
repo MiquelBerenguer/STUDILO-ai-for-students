@@ -103,6 +103,14 @@ def confirm(body: ConfirmIn, user: CurrentUser, db: DB) -> ConfirmOut:
         actions=[cards.action("drop_notes", "Drop notes", "upload", primary=True,
                               params={"kind": "notes"}, course_choices=choices), cards.DISMISS],
         dedupe_key="backfill_notes", priority=48)
+    cards.create_card(
+        db, "connect_calendar", "Want your Atenea deadlines too?",
+        body="In Atenea open Calendar → Export calendar → All courses → Get calendar URL, and paste it here. "
+             "I'll re-check it every day and turn deadlines into cards. No password needed.",
+        actions=[cards.action("connect_calendar", "Connect", "input", primary=True,
+                              placeholder="https://atenea.upc.edu/calendar/export_execute.php?…", input_type="url"),
+                 cards.action("dismiss", "Not now")],
+        dedupe_key="connect_calendar", priority=47)
     db.commit()  # release the SQLite write lock before the user row is updated in its own session
     with system_session_ctx() as sdb:
         row = sdb.get(User, user.id)

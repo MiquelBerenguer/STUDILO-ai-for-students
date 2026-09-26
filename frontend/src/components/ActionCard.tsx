@@ -24,6 +24,8 @@ const KIND: Record<string, { label: string; icon: IconName; tone: string }> = {
   job_failed: { label: "Something failed", icon: "alert", tone: "bg-red-50 text-red-600" },
   account_claim: { label: "Your account", icon: "settings", tone: "bg-canvas text-muted" },
   backfill_notes: { label: "Catch up", icon: "upload", tone: "bg-primary-soft text-primary" },
+  deadline: { label: "Deadline", icon: "clock", tone: "bg-warm-soft text-[#d57d37]" },
+  connect_calendar: { label: "Connect", icon: "link", tone: "bg-blue-soft text-[#4a78cf]" },
   info: { label: "Update", icon: "spark", tone: "bg-canvas text-muted" },
 };
 
@@ -147,6 +149,15 @@ function InlineInput({ card, action, busy, onSubmit, onUploaded }: {
         <textarea className="input min-h-24" placeholder="1. Units and dimensions&#10;2. First law…" value={value}
           onChange={(e) => setValue(e.target.value)} />
         <button className="btn-primary" disabled={busy || !value.trim()}>{busy ? "…" : action.label}</button>
+      </form>,
+    );
+  }
+  if (action.type === "input") {
+    return wrap(
+      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (value.trim()) onSubmit(value.trim()); }}>
+        <input className="input" type={action.input_type ?? "text"} placeholder={action.placeholder} value={value}
+          onChange={(e) => setValue(e.target.value)} required aria-label={action.label} />
+        <button className="btn-primary flex-none" disabled={busy || !value.trim()}>{busy ? "…" : action.label}</button>
       </form>,
     );
   }

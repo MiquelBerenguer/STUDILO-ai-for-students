@@ -17,6 +17,12 @@ Research date: 2026-09-26. Scope: investigation only; no integration code was ad
 
 ---
 
+> **Status update (2026-09-26, v2.1):** the two GO items are implemented. They are the connected
+> Atenea/Moodle calendar link (`backend/app/integrations/calendar_feed.py`) and the course-guide
+> syllabus import (`backend/app/integrations/upc_guides.py`). The guide parser was checked against three
+> real public guides (230105, 205220, EETAC 300021). Still open: whether Atenea shows students the
+> calendar export (needs your login, with your approval).
+
 ## 0. Recommendation in one paragraph
 
 **Go, but only for the sanctioned, student-initiated paths. No-go for any automatic login into Atenea

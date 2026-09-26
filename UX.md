@@ -107,10 +107,12 @@ invents them.
 | `exam_pack_ready` | `build_exam_pack` finished (T-14/7/3 or manual) | "Thermo exam in 7 days. I refreshed your Exam Pack with this week's notes." | **Open pack** · Undo (removes this version) | auto + undo |
 | `exam_date_needed` | First `class_ended` for a course with no exam (progressive disclosure) | "When is the exam for Fluid Dynamics?" | **Date picker → Save** · No exam | ask |
 | `past_exams_wanted` | An exam is created for a course with no past exams | "Got past Thermo exams? Drop them and practice exams will match their style." | Drop files (kind = past exam) · Skip | ask |
-| `syllabus_wanted` | First notes filed for a course with an empty syllabus | "Paste the Fluids syllabus so I can track the class pace." | Textarea → **Save** · Skip | ask |
+| `syllabus_wanted` | First notes filed for a course with an empty syllabus | "Paste the Fluids syllabus so I can track the class pace." | Subject code → **Fetch it** (public UPC course guide) · Textarea → Save · Skip | ask |
 | `approval` | Command bar high-impact intent (`change_exam_date`) | "Move Thermo midterm from 22 Oct → 15 Oct? I'll re-plan the Exam Pack reminders." | **Approve** · Reject | approval |
 | `answer` | `answer_question` job (QA agent) finished | "Last week in Fluids you covered Bernoulli and pipe losses…" + sources | Open sources · Dismiss | result |
 | `job_failed` | Any job ends `failed` for a user-visible pipeline (upload, pack, catch-up, answer) | "I couldn't finish the Thermo pack: no notes yet." | **Retry** · Dismiss | — |
+| `deadline` | Connected calendar sync found a new due date within 14 days | "Lab report 1 is due — due Thu 01 Oct, 23:59" | **Mark done** · Open course · Dismiss | result |
+| `connect_calendar` | Onboarding confirmed | "Want your Atenea deadlines too?" | Paste link → **Connect** · Not now | ask |
 | `account_claim` | Guest user created (onboarding) | "Save your account so your notes are safe." | Email + password → **Save** | ask |
 
 Deduplication: `dedupe_key` (e.g. `exam_date_needed:<course>`) is unique per user, so a trigger never

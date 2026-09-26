@@ -23,6 +23,7 @@ from app.db.models import (
     AgentAction,
     AgentRun,
     AgentStep,
+    Assignment,
     ClassSession,
     ClassSlot,
     Course,
@@ -357,6 +358,23 @@ async def act(card_id: str, body: ActIn, user: CurrentUser, db: DB) -> ActOut:
             job = emit(db, "catch_up_requested", {"session_id": card.data.get("session_id")}, source="manual")
             cards.resolve(card)
             msg = "On it — preparing a catch-up from your notes and the syllabus."
+        elif body.action == "connect_calendar":
+            from app.api.routers.integrations import connect_calendar
+
+            out = await connect_calendar(db, user.id, body.value or "")
+            job, msg = db.get(Job, out.job.id), out.message
+            cards.resolve(card)
+        elif body.action == "fetch_guide":
+            from app.api.routers.integrations import apply_guide
+
+            course = get_or_404(db, Course, card.data.get("course_id", ""))
+            msg = (await apply_guide(db, course, body.value or "")).message
+            cards.resolve(card)
+        elif body.action == "mark_done":
+            a = get_or_404(db, Assignment, card.data.get("assignment_id", ""))
+            a.done = True
+            cards.resolve(card)
+            msg = f"Marked “{a.title}” as done."
         elif body.action == "retry":
             job = get_or_404(db, Job, card.data.get("job_id", ""))
             if job.state == "failed":

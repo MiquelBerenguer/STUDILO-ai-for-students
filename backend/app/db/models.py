@@ -75,6 +75,7 @@ class Exam(IdMixin, TimestampMixin, UserOwned, Base):
     title: Mapped[str] = mapped_column(String(160))
     exam_date: Mapped[date] = mapped_column(Date)
     scope_note: Mapped[str] = mapped_column(Text, default="")
+    external_uid: Mapped[str | None] = mapped_column(String(300), nullable=True, index=True)  # iCal UID (feed sync)
 
 
 class Assignment(IdMixin, TimestampMixin, UserOwned, Base):
@@ -83,6 +84,20 @@ class Assignment(IdMixin, TimestampMixin, UserOwned, Base):
     title: Mapped[str] = mapped_column(String(200))
     due_date: Mapped[date] = mapped_column(Date)
     done: Mapped[bool] = mapped_column(Boolean, default=False)
+    external_uid: Mapped[str | None] = mapped_column(String(300), nullable=True, index=True)  # iCal UID (feed sync)
+    due_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)  # exact time when the source has one
+
+
+class CalendarFeed(IdMixin, TimestampMixin, UserOwned, Base):
+    """A calendar the student connected (e.g. Atenea/Moodle export URL). The URL is a secret: stored encrypted."""
+
+    __tablename__ = "calendar_feeds"
+    url_enc: Mapped[str] = mapped_column(Text)
+    host: Mapped[str] = mapped_column(String(200))
+    label: Mapped[str] = mapped_column(String(120), default="")
+    last_synced_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    stats: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
 # --------------------------------------------------------------------------- sessions & uploads

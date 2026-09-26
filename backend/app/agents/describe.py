@@ -10,7 +10,7 @@ from typing import Any
 
 AGENT_NAMES = {
     "planner": "Planner", "ingestion": "Reading agent", "notes": "Notes agent", "course_memory": "Course memory agent",
-    "exam": "Exam agent", "qa": "Q&A agent", "catch_up": "Catch-up agent", "onboarding": "Timetable agent",
+    "exam": "Exam agent", "qa": "Q&A agent", "catch_up": "Catch-up agent", "onboarding": "Timetable agent", "calendar": "Calendar agent",
 }
 
 _TYPE_NAMES = {"pdf": "PDF", "jpeg": "photo (JPEG)", "png": "image (PNG)", "heic": "photo (HEIC)", "webp": "image",
@@ -42,6 +42,8 @@ def describe_step(kind: str, name: str, inp: Any, out: Any, ok: bool = True) -> 
             "exam_approaching": f"{_g(out, 'exam')} is {_g(out, 'days_left')} days away ({_g(out, 'threshold')})",
             "ask_exam_date": f"Asking when the {_g(out, 'course')} exam is",
             "session_state": f"Class session is now {str(_g(out, 'state')).replace('_', ' ')}",
+            "calendar_synced": f"Filed {_g(out, 'new')} new and {_g(out, 'updated')} updated deadlines"
+                               + (f"; {_g(out, 'unmatched')} didn't match a course" if _g(out, "unmatched") else ""),
             "grid_parse": f"Read the timetable grid: {_g(out, 'slots')} classes found (confidence {_g(out, 'confidence')})",
             "escalate_timetable": f"Escalating to AI: {_short(_g(out, 'reason'), 80)}",
         }.get(name, name.replace("_", " ").capitalize())
@@ -118,6 +120,8 @@ def describe_step(kind: str, name: str, inp: Any, out: Any, ok: bool = True) -> 
         return "Answer ready"
     if name == "finish":
         return f"Done: {_short(_g(out, 'summary') or _g(inp, 'summary'), 80)}"
+    if name == "fetch_calendar":
+        return f"Reading your calendar from {_g(inp, 'host')}"
     if name in ("parse_timetable", "extract_timetable"):
         return f"Reading your timetable — {_short(_g(out, 'summary'), 70)}"
     if name == "validate_timetable":
@@ -160,9 +164,13 @@ def headline(agent: str, output: str, state: str) -> str:
                 parts.append("Asked for your notes")
             elif seg.startswith("nothing to do"):
                 parts.append("Checked — nothing to do")
+            elif m := re.match(r"calendar_sync (.+)$", seg):
+                parts.append(f"Refreshing your {m.group(1)} calendar")
             elif seg.startswith("session "):
                 parts.append("Updated the class session")
         return "; ".join(parts) or "Checked your schedule"
+    if agent == "calendar" and out:
+        return f"Calendar refreshed: {out}"
     if agent == "course_memory" and out == "session flagged as missed":
         return "Flagged the class as missed in your course memory"
     if agent == "onboarding" and (m := re.match(r"(\d+) classes via (\w+)", out)):

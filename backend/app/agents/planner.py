@@ -11,7 +11,8 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import select
 
 from app.agents.base import AgentTrace, ToolContext
-from app.db.models import ClassSession, ClassSlot
+from app.db.models import CalendarFeed, ClassSession, ClassSlot
+from app.integrations.calendar_feed import due_for_sync
 from app.orchestrator.events import emit, once
 from app.orchestrator.timeutil import local_dt, local_today
 from app.tools.planner import PLANNER_TOOLS as T
@@ -76,6 +77,12 @@ class PlannerAgent:
                                                                  "threshold": f"T-{th}"})
                 emit(ctx.db, "exam_approaching", {"exam_id": exam["exam_id"], "threshold": th}, "scheduler")
                 self.actions.append(f"exam_approaching {exam['title']} T-{th}")
+
+        # 4) connected calendars (Moodle/Atenea export) -> daily refresh
+        for feed in ctx.db.scalars(select(CalendarFeed)):
+            if due_for_sync(feed, now) and once(ctx.db, f"calendar_sync:{feed.id}:{today.isoformat()}"):
+                emit(ctx.db, "calendar_sync_due", {"feed_id": feed.id}, "scheduler")
+                self.actions.append(f"calendar_sync {feed.label}")
 
         if self._trace:
             self._trace.finish("succeeded", "; ".join(self.actions))

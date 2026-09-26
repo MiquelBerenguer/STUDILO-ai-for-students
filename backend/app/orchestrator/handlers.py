@@ -17,6 +17,7 @@ from app.config.settings import get_settings
 from app.db.base import utcnow
 from app.db.engine import system_session_ctx
 from app.db.models import (
+    CalendarFeed,
     ClassSession,
     ClassSlot,
     Course,
@@ -438,7 +439,16 @@ async def handle_answer_question(ctx: ToolContext, payload: dict[str, Any]) -> d
     return {"card_id": card.id, "run_id": res.run_id}
 
 
+# ------------------------------------------------------------------ connected calendars (Moodle/Atenea export)
+async def handle_sync_calendar(ctx: ToolContext, payload: dict[str, Any]) -> dict[str, Any]:
+    from app.integrations import calendar_feed
+
+    feed = store.must_get(ctx.db, CalendarFeed, payload.get("feed_id"), "calendar")
+    return await calendar_feed.sync(ctx, feed, _user(ctx.user_id).timezone)
+
+
 HANDLERS = {
+    "sync_calendar": handle_sync_calendar,
     "catch_up": handle_catch_up,
     "answer_question": handle_answer_question,
     "class_ended": handle_class_ended,

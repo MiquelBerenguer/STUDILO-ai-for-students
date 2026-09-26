@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from datetime import date, timedelta
 
 import cv2
 import numpy as np
@@ -196,3 +197,50 @@ Wed 8-10 Calculus II, Aula 3, Prof. Serra
 Thursday 09:00 - 11:00 Thermodynamics, Aula A2-101, Prof. Garcia
 Friday 12:00-14:00 Physics Lab, Lab C4-005, Prof. Vidal
 """
+
+
+# ------------------------------------------------------------------ connected calendar + course guide
+def moodle_calendar(today: date, exam_day_offset: int = 30, due_offset: int = 5) -> bytes:
+    """A Moodle-style calendar export: due instants, a quiz close, an exam, noise the sync must ignore."""
+    def z(d: date, hm: str) -> str:
+        return f"{d:%Y%m%d}T{hm.replace(':', '')}00Z"
+    due = today + timedelta(days=due_offset)
+    ev = [
+        ("due1@atenea", "Lab report 1 is due", "Thermodynamics", z(due, "21:59"), z(due, "21:59"), False),
+        ("quiz1@atenea", "Quiz 2 closes", "Fluid Dynamics", z(today + timedelta(days=9), "20:00"),
+         z(today + timedelta(days=9), "20:00"), False),
+        ("exam1@atenea", "Thermodynamics final exam", "Thermodynamics", f"{today + timedelta(days=exam_day_offset):%Y%m%d}",
+         None, False),
+        ("far@atenea", "Essay is due", "History of Art", z(today + timedelta(days=12), "10:00"),
+         z(today + timedelta(days=12), "10:00"), False),  # no such course → unmatched
+        ("tut@atenea", "Office hours", "Thermodynamics", z(today + timedelta(days=2), "10:00"),
+         z(today + timedelta(days=2), "11:00"), False),  # not a deadline → ignored
+        ("weekly@atenea", "Thermodynamics lecture", "Thermodynamics", z(today, "09:00"), z(today, "11:00"), True),
+    ]
+    out = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Moodle Pty Ltd//NONSGML Moodle Version 2025//EN"]
+    for uid, summary, cat, start, end, weekly in ev:
+        out += ["BEGIN:VEVENT", f"UID:{uid}", f"SUMMARY:{summary}", f"CATEGORIES:{cat}",
+                f"DTSTART;VALUE=DATE:{start}" if end is None and len(start) == 8 else f"DTSTART:{start}"]
+        if end:
+            out.append(f"DTEND:{end}")
+        if weekly:
+            out.append("RRULE:FREQ=WEEKLY;COUNT=10")
+        out.append("END:VEVENT")
+    out.append("END:VCALENDAR")
+    return "\r\n".join(out).encode()
+
+
+def upc_guide_pdf(code: str = "300021") -> bytes:
+    doc = pymupdf.open()
+    page = doc.new_page()
+    y = 60
+    for line in ["Guia docent", f"{code} - TERMO - Thermodynamics", "Unitat responsable: 300 - EETAC",
+                 "OBJECTIUS D'APRENENTATGE DE L'ASSIGNATURA", "Understand energy balances.", "CONTINGUTS",
+                 "1. First law of thermodynamics", "Descripció:", "Closed and open systems.", "Dedicació: 20h",
+                 "Grup gran/Teoria: 6h", "Aprenentatge autònom: 14h", "Pàgina: 1 / 3",
+                 "2. Second law and entropy", "3. Thermodynamic cycles", "ACTIVITATS", "Lab sessions"]:
+        page.insert_text((50, y), line, fontsize=11)
+        y += 20
+    data = doc.tobytes()
+    doc.close()
+    return data

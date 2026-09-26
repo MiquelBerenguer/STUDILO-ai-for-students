@@ -25,6 +25,8 @@ cd backend && uv run python -m app.startup       # validate .env + models.yaml
 - Command bar: `app/command/parse.py` (deterministic) + `app/command/service.py` (dispatch, JEV fallback).
 - Onboarding: `app/onboarding/timetable.py` (pure parsers) + `app/onboarding/extract.py` (pipeline, trace).
 - Frontend: `pages/Feed.tsx` (home), `components/{ActionCard,LiveRun,CommandBar,Timetable}.tsx`.
+- UPC integrations: `app/integrations/calendar_feed.py` (encrypted calendar link, daily sync) and
+  `app/integrations/upc_guides.py` (public course guides → syllabus). Secrets at rest: `app/auth/crypto.py`.
 - UI screenshots: `scripts/ui_screens.py` (dev-only, Playwright + system Chrome).
 
 ## Rules
