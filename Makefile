@@ -2,10 +2,12 @@
 
 BACKEND := backend
 FRONTEND := frontend
-# Per-worktree overrides (gitignored), e.g. "BACKEND_PORT := 8003" so parallel worktrees can all run `make dev`.
+# View worktrees (see AGENTS.md) have a gitignored .worktree.mk that sets WORKTREE_VIEW and FRONTEND_PORT.
+# A worktree never runs its own backend: it previews its frontend against the MAIN backend + shared database.
 -include .worktree.mk
 BACKEND_PORT ?= 8000
 FRONTEND_PORT ?= 5173
+MAIN_BACKEND_PORT ?= 8000
 export BACKEND_PORT FRONTEND_PORT
 
 help:
@@ -15,6 +17,17 @@ help:
 	@echo "make lint    - ruff + tsc"
 	@echo "make check   - validate .env + models.yaml without starting"
 
+ifdef WORKTREE_VIEW
+setup:
+	@echo "Worktree '$(WORKTREE_VIEW)': dependencies are shared with the main checkout (see AGENTS.md). Nothing to install."
+
+dev:
+	@curl -fs http://127.0.0.1:$(MAIN_BACKEND_PORT)/api/v1/health >/dev/null || { \
+	  echo "The main backend isn't running. Start it in the main checkout: make dev"; exit 1; }
+	@echo "Worktree '$(WORKTREE_VIEW)': this branch's frontend on http://localhost:$(FRONTEND_PORT)"
+	@echo "  using the MAIN backend :$(MAIN_BACKEND_PORT) and the shared database. Backend changes show up after merge."
+	cd $(FRONTEND) && BACKEND_PORT=$(MAIN_BACKEND_PORT) npm run dev -- --host --port $(FRONTEND_PORT) --strictPort
+else
 setup:
 	@command -v uv >/dev/null || { echo "uv is required: https://docs.astral.sh/uv/"; exit 1; }
 	@command -v npm >/dev/null || { echo "Node.js >= 20 (npm) is required"; exit 1; }
@@ -32,6 +45,7 @@ dev: setup check
 	  (cd $(BACKEND) && uv run uvicorn app.main:app --host 127.0.0.1 --port $(BACKEND_PORT) --reload --reload-dir app) & \
 	  (cd $(FRONTEND) && npm run dev -- --host --port $(FRONTEND_PORT) --strictPort) & \
 	  wait
+endif
 
 test:
 	cd $(BACKEND) && uv run pytest -q
